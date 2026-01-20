@@ -1,0 +1,710 @@
+# GoHTMX Framework - AI Assistant Guide
+
+> This document instructs AI coding assistants on how to write applications using the GoHTMX framework.
+
+## Framework Overview
+
+GoHTMX is a mobile application framework that uses:
+- **Go** as the backend runtime (compiled via gomobile)
+- **HTMX** for frontend interactivity (hypermedia-driven)
+- **templ** for type-safe HTML templates
+- **WebView** to render the UI (iOS WKWebView, Android WebView)
+
+The key insight: there's no network - HTTP requests from HTMX are intercepted by the WebView and routed directly to Go handlers running in-process.
+
+## Core Principles
+
+1. **Hypermedia-Driven**: Return HTML fragments, not JSON. HTMX swaps HTML directly into the DOM.
+2. **Server-Side State**: All state lives in Go. The WebView is a thin rendering layer.
+3. **Progressive Enhancement**: Start with working HTML, enhance with HTMX attributes.
+4. **Type Safety**: Use templ for compile-time template checking.
+
+## Project Structure
+
+When working on a GoHTMX project, expect this structure:
+
+```
+project/
+├── main.go              # Entry point, dev server
+├── app/app.go           # Router setup
+├── handlers/            # HTTP handlers (business logic)
+├── templates/           # templ files (.templ)
+├── static/              # CSS, JS, images
+├── mobile/mobile.go     # Mobile bridge
+└── ios/                 # Xcode project
+```
+
+## Writing Handlers
+
+### Handler Signature
+
+All handlers follow this pattern:
+
+```go
+func(ctx *router.Context) (string, error)
+```
+
+- `ctx` provides request data and response helpers
+- Return HTML string and optional error
+- Empty string return is valid (for DELETE operations, etc.)
+
+### Handler Examples
+
+```go
+// GET handler - return rendered template
+r.GET("/", func(ctx *router.Context) (string, error) {
+    return renderer.Render(templates.HomePage())
+})
+
+// GET with URL parameter
+r.GET("/items/{id}", func(ctx *router.Context) (string, error) {
+    id := ctx.Param("id")
+    item, err := getItem(id)
+    if err != nil {
+        return renderer.Render(templates.NotFound())
+    }
+    return renderer.Render(templates.ItemDetail(item))
+})
+
+// POST with form data
+r.POST("/items", func(ctx *router.Context) (string, error) {
+    name := ctx.FormValue("name")
+    item := createItem(name)
+    return renderer.Render(templates.ItemRow(item))
+})
+
+// DELETE that triggers HTMX event
+r.DELETE("/items/{id}", func(ctx *router.Context) (string, error) {
+    id := ctx.Param("id")
+    deleteItem(id)
+    ctx.Trigger("itemDeleted")
+    return "", nil
+})
+```
+
+### Context Methods
+
+```go
+ctx.Param("name")           // URL path parameter: /users/{name}
+ctx.Query("key")            // Query parameter: ?key=value
+ctx.FormValue("field")      // Form field value
+ctx.Header("X-Custom")      // Request header
+ctx.IsHTMX()                // True if HX-Request header present
+ctx.SetHeader("key", "val") // Set response header
+ctx.Trigger("event")        // Set HX-Trigger header
+ctx.Redirect("/path")       // Redirect (HTMX-aware)
+```
+
+## Writing Templates
+
+### Template Syntax (templ)
+
+templ uses Go-like syntax with HTML:
+
+```go
+package templates
+
+// Component with parameters
+templ Button(text string, href string) {
+    <a href={ href } class="btn">{ text }</a>
+}
+
+// Component with children
+templ Card(title string) {
+    <div class="card">
+        <h2>{ title }</h2>
+        <div class="card-body">
+            { children... }
+        </div>
+    </div>
+}
+
+// Using components
+templ HomePage() {
+    @Layout("Home") {
+        @Card("Welcome") {
+            <p>Hello, world!</p>
+            @Button("Learn More", "/about")
+        }
+    }
+}
+
+// Conditional rendering
+templ UserStatus(user *User) {
+    if user != nil {
+        <span>Welcome, { user.Name }</span>
+    } else {
+        <a href="/login">Sign In</a>
+    }
+}
+
+// Loops
+templ ItemList(items []Item) {
+    <ul>
+        for _, item := range items {
+            <li>{ item.Name }</li>
+        }
+    </ul>
+}
+
+// Conditional classes
+templ TodoItem(todo Todo) {
+    <div class={ "todo", templ.KV("completed", todo.Done) }>
+        { todo.Title }
+    </div>
+}
+
+// Dynamic attributes
+templ Input(name string, value string, required bool) {
+    <input
+        type="text"
+        name={ name }
+        value={ value }
+        required?={ required }
+    />
+}
+```
+
+### Layout Pattern
+
+Always use a layout component for full pages:
+
+```go
+templ Layout(title string) {
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <title>{ title }</title>
+        <link rel="stylesheet" href="/static/css/output.css"/>
+        <script src="/static/js/htmx.min.js"></script>
+    </head>
+    <body>
+        { children... }
+    </body>
+    </html>
+}
+
+templ AboutPage() {
+    @Layout("About") {
+        <main class="container">
+            <h1>About Us</h1>
+        </main>
+    }
+}
+```
+
+### Fragment Pattern
+
+For HTMX partial updates, return just the fragment:
+
+```go
+// Full page (initial load or non-HTMX request)
+templ TodosPage(todos []Todo) {
+    @Layout("Todos") {
+        <main>
+            <h1>My Todos</h1>
+            @TodoList(todos)
+            @AddTodoForm()
+        </main>
+    }
+}
+
+// Fragment (for HTMX swaps)
+templ TodoList(todos []Todo) {
+    <div id="todo-list">
+        for _, todo := range todos {
+            @TodoItem(todo)
+        }
+    </div>
+}
+
+// Single item fragment
+templ TodoItem(todo Todo) {
+    <div id={ "todo-" + todo.ID } class="todo-item">
+        { todo.Title }
+    </div>
+}
+```
+
+## HTMX Patterns
+
+### Basic HTMX Attributes
+
+```html
+<!-- GET request, replace target -->
+<button hx-get="/items" hx-target="#list">Load Items</button>
+
+<!-- POST with form data -->
+<form hx-post="/items" hx-target="#list" hx-swap="beforeend">
+    <input name="title" required/>
+    <button type="submit">Add</button>
+</form>
+
+<!-- DELETE with confirmation -->
+<button
+    hx-delete="/items/123"
+    hx-confirm="Are you sure?"
+    hx-target="closest .item"
+    hx-swap="delete"
+>
+    Delete
+</button>
+```
+
+### Common hx-swap Values
+
+- `innerHTML` (default): Replace inner HTML of target
+- `outerHTML`: Replace entire target element
+- `beforeend`: Append to target
+- `afterbegin`: Prepend to target
+- `delete`: Remove target element
+- `none`: Don't swap (for side-effect-only requests)
+
+### Common hx-trigger Values
+
+- `click` (default for buttons)
+- `submit` (default for forms)
+- `change`: On input change
+- `keyup`: On key release
+- `load`: On element load
+- `revealed`: When element enters viewport
+- `every 5s`: Polling interval
+
+### hx-boost for Navigation
+
+Enable SPA-like navigation:
+
+```html
+<body hx-boost="true">
+    <nav>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+    </nav>
+    <main id="content">
+        <!-- Page content swapped here -->
+    </main>
+</body>
+```
+
+### Loading Indicators
+
+```html
+<button hx-get="/slow" hx-indicator="#spinner">
+    Load
+    <span id="spinner" class="htmx-indicator">...</span>
+</button>
+```
+
+CSS for indicators:
+```css
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator { display: inline; }
+.htmx-request.htmx-indicator { display: inline; }
+```
+
+### Event Triggers from Server
+
+In handler:
+```go
+ctx.Trigger("itemCreated")
+// or with data:
+ctx.TriggerWithData("itemCreated", map[string]any{"id": 123})
+```
+
+In HTML:
+```html
+<div hx-trigger="itemCreated from:body" hx-get="/items" hx-target="#list">
+    <!-- Refreshes when itemCreated event fires -->
+</div>
+```
+
+### Out-of-Band Swaps
+
+Update multiple elements from one response:
+
+```go
+templ CreateItemResponse(item Item, count int) {
+    // Primary response
+    @ItemRow(item)
+
+    // Out-of-band update
+    <span id="item-count" hx-swap-oob="true">{ strconv.Itoa(count) } items</span>
+}
+```
+
+## Common Patterns
+
+### CRUD Operations
+
+```go
+// handlers/items.go
+package handlers
+
+type Item struct {
+    ID    string
+    Name  string
+}
+
+var items = make(map[string]Item)
+
+func MountItems(r *router.Router, renderer *render.TemplRenderer) {
+    // List
+    r.GET("/items", func(ctx *router.Context) (string, error) {
+        list := getItems()
+        if ctx.IsHTMX() {
+            return renderer.Render(templates.ItemList(list))
+        }
+        return renderer.Render(templates.ItemsPage(list))
+    })
+
+    // Create
+    r.POST("/items", func(ctx *router.Context) (string, error) {
+        name := ctx.FormValue("name")
+        item := createItem(name)
+        return renderer.Render(templates.ItemRow(item))
+    })
+
+    // Read
+    r.GET("/items/{id}", func(ctx *router.Context) (string, error) {
+        id := ctx.Param("id")
+        item, ok := items[id]
+        if !ok {
+            ctx.SetStatus(404)
+            return renderer.Render(templates.NotFound())
+        }
+        return renderer.Render(templates.ItemDetail(item))
+    })
+
+    // Update
+    r.PUT("/items/{id}", func(ctx *router.Context) (string, error) {
+        id := ctx.Param("id")
+        name := ctx.FormValue("name")
+        item := updateItem(id, name)
+        return renderer.Render(templates.ItemRow(item))
+    })
+
+    // Delete
+    r.DELETE("/items/{id}", func(ctx *router.Context) (string, error) {
+        id := ctx.Param("id")
+        deleteItem(id)
+        return "", nil  // Empty response, HTMX will delete target
+    })
+}
+```
+
+### Search/Filter
+
+```go
+// templates/search.templ
+templ SearchForm() {
+    <input
+        type="search"
+        name="q"
+        placeholder="Search..."
+        hx-get="/search"
+        hx-trigger="input changed delay:300ms"
+        hx-target="#results"
+    />
+    <div id="results"></div>
+}
+
+// handlers/search.go
+r.GET("/search", func(ctx *router.Context) (string, error) {
+    query := ctx.Query("q")
+    results := search(query)
+    return renderer.Render(templates.SearchResults(results))
+})
+```
+
+### Infinite Scroll
+
+```go
+templ ItemListWithPagination(items []Item, page int, hasMore bool) {
+    for _, item := range items {
+        @ItemRow(item)
+    }
+    if hasMore {
+        <div
+            hx-get={ fmt.Sprintf("/items?page=%d", page+1) }
+            hx-trigger="revealed"
+            hx-swap="outerHTML"
+        >
+            Loading more...
+        </div>
+    }
+}
+```
+
+### Tabs
+
+```go
+templ TabContainer() {
+    <div class="tabs">
+        <button
+            hx-get="/tab/one"
+            hx-target="#tab-content"
+            class="tab active"
+        >
+            Tab 1
+        </button>
+        <button
+            hx-get="/tab/two"
+            hx-target="#tab-content"
+            class="tab"
+        >
+            Tab 2
+        </button>
+    </div>
+    <div id="tab-content">
+        @TabOne()
+    </div>
+}
+```
+
+### Modal Dialog
+
+```go
+templ ModalTrigger() {
+    <button
+        hx-get="/modal/confirm"
+        hx-target="body"
+        hx-swap="beforeend"
+    >
+        Open Modal
+    </button>
+}
+
+templ Modal(title string) {
+    <div id="modal" class="modal-backdrop">
+        <div class="modal">
+            <h2>{ title }</h2>
+            { children... }
+            <button onclick="this.closest('#modal').remove()">
+                Close
+            </button>
+        </div>
+    </div>
+}
+
+templ ConfirmModal() {
+    @Modal("Confirm Action") {
+        <p>Are you sure?</p>
+        <button
+            hx-post="/action"
+            hx-target="#result"
+            onclick="this.closest('#modal').remove()"
+        >
+            Confirm
+        </button>
+    }
+}
+```
+
+### Form Validation
+
+```go
+templ FormField(name, label, value, error string) {
+    <div class="field">
+        <label for={ name }>{ label }</label>
+        <input
+            type="text"
+            id={ name }
+            name={ name }
+            value={ value }
+            hx-post={ "/validate/" + name }
+            hx-trigger="blur"
+            hx-target={ "#" + name + "-error" }
+            class={ templ.KV("error", error != "") }
+        />
+        <span id={ name + "-error" } class="error-message">
+            { error }
+        </span>
+    </div>
+}
+
+// Handler
+r.POST("/validate/email", func(ctx *router.Context) (string, error) {
+    email := ctx.FormValue("email")
+    if !isValidEmail(email) {
+        return "<span class='error'>Invalid email address</span>", nil
+    }
+    return "", nil  // Clear error
+})
+```
+
+## Mobile-Specific Patterns
+
+### Safe Area Handling
+
+```go
+templ MobileLayout(title string) {
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+        <style>
+            body {
+                padding-top: env(safe-area-inset-top);
+                padding-bottom: env(safe-area-inset-bottom);
+                padding-left: env(safe-area-inset-left);
+                padding-right: env(safe-area-inset-right);
+            }
+        </style>
+    </head>
+    <body>
+        { children... }
+    </body>
+    </html>
+}
+```
+
+### Touch-Friendly Buttons
+
+```go
+templ MobileButton(text string) {
+    <button class="min-h-[44px] min-w-[44px] p-3 touch-manipulation">
+        { text }
+    </button>
+}
+```
+
+### Pull to Refresh
+
+```go
+templ PullToRefresh(contentPath string) {
+    <div
+        hx-get={ contentPath }
+        hx-trigger="revealed"
+        hx-target="#content"
+        hx-swap="innerHTML"
+    >
+        <div id="content">
+            { children... }
+        </div>
+    </div>
+}
+```
+
+## Do's and Don'ts
+
+### DO:
+
+1. **Return HTML fragments** from handlers, not JSON
+2. **Use templ** for all HTML generation
+3. **Use semantic HTML** (buttons for actions, anchors for navigation)
+4. **Use hx-target** to specify where responses go
+5. **Use hx-swap** to control how content is inserted
+6. **Use ctx.Trigger()** to communicate events to the page
+7. **Keep handlers simple** - one responsibility each
+8. **Use Layout for full pages**, fragments for partial updates
+
+### DON'T:
+
+1. **Don't return JSON** - this is hypermedia, not an API
+2. **Don't use JavaScript frameworks** - HTMX handles interactivity
+3. **Don't manipulate DOM in JavaScript** - let HTMX do it
+4. **Don't store state in JavaScript** - keep it in Go
+5. **Don't use onclick for HTMX actions** - use hx-* attributes
+6. **Don't forget hx-target** - know where your response goes
+7. **Don't return full pages for HTMX requests** - return fragments
+
+## File Naming Conventions
+
+- Handlers: `handlers/*.go` (e.g., `handlers/items.go`)
+- Templates: `templates/*.templ` (e.g., `templates/items.templ`)
+- Generated: `templates/*_templ.go` (auto-generated, don't edit)
+- Layouts: `templates/layout.templ`
+- Components: `templates/components.templ`
+- Pages: `templates/<name>.templ` (e.g., `templates/home.templ`)
+
+## Testing Patterns
+
+```go
+// handlers/items_test.go
+func TestCreateItem(t *testing.T) {
+    r := setupTestRouter()
+
+    req := httptest.NewRequest("POST", "/items", strings.NewReader("name=Test"))
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+    w := httptest.NewRecorder()
+    r.ServeHTTP(w, req)
+
+    if w.Code != 200 {
+        t.Errorf("expected 200, got %d", w.Code)
+    }
+
+    if !strings.Contains(w.Body.String(), "Test") {
+        t.Error("response should contain item name")
+    }
+}
+```
+
+## Debugging Tips
+
+1. **Check Safari Web Inspector** in dev mode for network/console
+2. **Use fmt.Println** in handlers (shows in terminal)
+3. **Check generated `_templ.go` files** if templates aren't working
+4. **Verify hx-target exists** on the page
+5. **Check browser console** for HTMX errors
+
+## Common Mistakes and Fixes
+
+| Mistake | Fix |
+|---------|-----|
+| HTMX request returns nothing | Check hx-target element exists |
+| Page refresh instead of swap | Add hx-target, check hx-boost |
+| Form not submitting | Ensure button type="submit" |
+| Styles not updating | Run `bun run css` or check Tailwind config |
+| Template changes not showing | Run `templ generate` or check air is running |
+| "Not found" in mobile app | Check route is registered in app.go |
+
+## Quick Reference
+
+### Router
+```go
+r.GET("/path", handler)
+r.POST("/path", handler)
+r.PUT("/path", handler)
+r.DELETE("/path", handler)
+r.Group("/prefix", func(r *router.Router) { ... })
+r.Static("/static", "static")
+```
+
+### Context
+```go
+ctx.Param("id")        // URL param
+ctx.Query("key")       // Query string
+ctx.FormValue("name")  // Form field
+ctx.IsHTMX()           // Is HTMX request?
+ctx.Trigger("event")   // Fire HX-Trigger
+ctx.Redirect("/path")  // Redirect
+```
+
+### HTMX Attributes
+```html
+hx-get="/url"          <!-- GET request -->
+hx-post="/url"         <!-- POST request -->
+hx-put="/url"          <!-- PUT request -->
+hx-delete="/url"       <!-- DELETE request -->
+hx-target="#id"        <!-- Where to put response -->
+hx-swap="innerHTML"    <!-- How to insert response -->
+hx-trigger="click"     <!-- When to send request -->
+hx-indicator="#spin"   <!-- Loading indicator -->
+hx-confirm="Sure?"     <!-- Confirmation dialog -->
+hx-boost="true"        <!-- Enhance all links/forms -->
+```
+
+### templ Syntax
+```go
+templ Name(args) { }           // Define component
+@Component()                   // Use component
+{ variable }                   // Output value
+{ children... }                // Slot for children
+if cond { } else { }           // Conditional
+for _, x := range xs { }       // Loop
+class={ templ.KV("a", bool) }  // Conditional class
+attr?={ bool }                 // Conditional attribute
+```
