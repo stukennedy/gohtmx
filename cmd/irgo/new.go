@@ -139,6 +139,7 @@ func getIrgoPath() string {
 	// Check common development locations
 	home, _ := os.UserHomeDir()
 	commonPaths := []string{
+		filepath.Join(home, "Dev", "@irgo", "core"),
 		filepath.Join(home, "Dev", "irgo"),
 		filepath.Join(home, "dev", "irgo"),
 		filepath.Join(home, "Development", "irgo"),
@@ -278,6 +279,16 @@ func newProject(name string) error {
 		}
 	}
 
+	// Run go mod tidy to download dependencies
+	fmt.Println("Running go mod tidy...")
+	tidyCmd := exec.Command("go", "mod", "tidy")
+	tidyCmd.Dir = projectDir
+	tidyCmd.Stdout = os.Stdout
+	tidyCmd.Stderr = os.Stderr
+	if err := tidyCmd.Run(); err != nil {
+		fmt.Printf("Warning: go mod tidy failed: %v\n", err)
+	}
+
 	// Generate templ files if templ is available
 	if _, err := exec.LookPath("templ"); err == nil {
 		fmt.Println("Generating templ files...")
@@ -295,7 +306,6 @@ func newProject(name string) error {
 	fmt.Println()
 	fmt.Println("Next steps:")
 	fmt.Printf("  cd %s\n", projectDir)
-	fmt.Println("  go mod tidy")
 	fmt.Println("  bun install        # or: npm install")
 	fmt.Println("  irgo dev           # start development server")
 	fmt.Println()

@@ -256,6 +256,17 @@ func runIOS(devMode bool) error {
 			return err
 		}
 
+		// Still need to build the framework for the Xcode project
+		modulePath, err := getModulePath()
+		if err != nil {
+			return fmt.Errorf("could not determine module path: %w", err)
+		}
+
+		fmt.Println("Building iOS framework...")
+		if err := buildIOS(modulePath); err != nil {
+			return err
+		}
+
 		// Update Info.plist to enable dev mode
 		infoPlistPath := filepath.Join(iosProjectPath, "Example/Info.plist")
 		if err := setDevServerInPlist(infoPlistPath, devServerURL); err != nil {
@@ -264,7 +275,7 @@ func runIOS(devMode bool) error {
 
 		// Start dev server in background
 		fmt.Printf("Starting dev server at %s...\n", devServerURL)
-		devServerCmd = exec.Command("./dev.sh")
+		devServerCmd = exec.Command("air")
 		devServerCmd.Stdout = os.Stdout
 		devServerCmd.Stderr = os.Stderr
 		if err := devServerCmd.Start(); err != nil {
