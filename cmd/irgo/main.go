@@ -6,7 +6,10 @@ import (
 	"os"
 )
 
-const version = "0.1.0"
+var (
+	version = "0.1.0"
+	commit  = "dev" // set via ldflags at build time
+)
 
 func main() {
 	if len(os.Args) < 2 {
@@ -69,7 +72,7 @@ func main() {
 		err = installTools()
 
 	case "version", "-v", "--version":
-		fmt.Printf("irgo %s\n", version)
+		fmt.Printf("irgo %s (%s)\n", version, commit)
 
 	case "help", "-h", "--help":
 		if len(os.Args) > 2 {
