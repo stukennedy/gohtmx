@@ -238,7 +238,7 @@ func newProject(name string) error {
 		// Replace placeholders
 		contentStr := string(content)
 		contentStr = strings.ReplaceAll(contentStr, "{{PROJECT_NAME}}", projectName)
-		contentStr = strings.ReplaceAll(contentStr, "{{MODULE_PATH}}", "github.com/"+projectName)
+		contentStr = strings.ReplaceAll(contentStr, "{{MODULE_PATH}}", projectName)
 		contentStr = strings.ReplaceAll(contentStr, "{{GO_VERSION}}", getGoVersion())
 
 		// Add replace directive for local development if irgo isn't published
