@@ -6,12 +6,15 @@ package desktop
 import (
 	"context"
 	"fmt"
-	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
 	webview "github.com/webview/webview_go"
+
+	"github.com/stukennedy/irgo/pkg/transport"
+	ws "github.com/stukennedy/irgo/pkg/websocket"
 )
 
 // Config holds desktop app configuration
@@ -20,8 +23,9 @@ type Config struct {
 	Width     int
 	Height    int
 	Resizable bool
-	Debug     bool // Enable webview devtools
-	Port      int  // 0 = auto-select available port
+	Debug     bool   // Enable webview devtools
+	Port      int    // 0 = auto-select available port
+	Transport string // "loopback" (default) or "inprocess"
 }
 
 // DefaultConfig returns sensible defaults for a desktop app
@@ -33,17 +37,18 @@ func DefaultConfig() Config {
 		Resizable: true,
 		Debug:     false,
 		Port:      0,
+		Transport: "loopback",
 	}
 }
 
 // App represents a desktop application with an embedded HTTP server
 type App struct {
-	config  Config
-	handler http.Handler
-	server  *http.Server
-	wv      webview.WebView
-	port    int
-	wg      sync.WaitGroup
+	config    Config
+	handler   http.Handler
+	wsHub     *ws.Hub
+	transport transport.Transport
+	wv        webview.WebView
+	wg        sync.WaitGroup
 }
 
 // New creates a new desktop app with the given HTTP handler
@@ -51,69 +56,97 @@ func New(handler http.Handler, config Config) *App {
 	return &App{
 		config:  config,
 		handler: handler,
+		wsHub:   ws.NewHub(),
+	}
+}
+
+// NewWithHub creates a new desktop app with a custom WebSocket hub
+func NewWithHub(handler http.Handler, wsHub *ws.Hub, config Config) *App {
+	return &App{
+		config:  config,
+		handler: handler,
+		wsHub:   wsHub,
 	}
 }
 
 // Run starts the desktop app (blocking until window is closed)
 func (a *App) Run() error {
-	// 1. Find available port
-	port, err := a.findPort()
-	if err != nil {
-		return fmt.Errorf("finding port: %w", err)
-	}
-	a.port = port
-
-	// 2. Start HTTP server in background
-	if err := a.startServer(); err != nil {
-		return fmt.Errorf("starting server: %w", err)
+	// Determine transport type from config or environment
+	transportType := a.config.Transport
+	if env := os.Getenv("IRGO_TRANSPORT"); env != "" {
+		transportType = env
 	}
 
-	// 3. Create and run webview (blocks until window closed)
+	// Create the appropriate transport
+	var t transport.Transport
+	switch transportType {
+	case "inprocess":
+		t = transport.NewInProcessTransport(a.handler, a.wsHub,
+			transport.WithPort(a.config.Port),
+		)
+	default:
+		t = transport.NewLoopbackTransport(a.handler, a.wsHub,
+			transport.WithPort(a.config.Port),
+		)
+	}
+	a.transport = t
+
+	// Start the transport
+	if err := t.Start(); err != nil {
+		return fmt.Errorf("starting transport: %w", err)
+	}
+
+	// Run webview (blocks until window closed)
 	a.runWebview()
 
-	// 4. Cleanup
+	// Cleanup
 	return a.Shutdown()
 }
 
-// Port returns the port the server is running on
+// Port returns the port the server is running on (0 for inprocess transport)
 func (a *App) Port() int {
-	return a.port
+	if a.transport == nil {
+		return 0
+	}
+	cfg := a.transport.Config()
+	if cfg != nil {
+		return cfg.Port
+	}
+	return 0
 }
 
-// URL returns the local server URL
+// URL returns the local server URL (empty for inprocess transport)
 func (a *App) URL() string {
-	return fmt.Sprintf("http://127.0.0.1:%d", a.port)
+	if a.transport == nil {
+		return ""
+	}
+	cfg := a.transport.Config()
+	if cfg != nil && cfg.Address != "" {
+		return fmt.Sprintf("http://%s:%d", cfg.Address, cfg.Port)
+	}
+	return ""
 }
 
-func (a *App) findPort() (int, error) {
-	if a.config.Port != 0 {
-		return a.config.Port, nil
+// Secret returns the per-launch authentication secret
+func (a *App) Secret() string {
+	if a.transport == nil {
+		return ""
 	}
-	// Find random available port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+	cfg := a.transport.Config()
+	if cfg != nil {
+		return cfg.Secret
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	listener.Close()
-	return port, nil
+	return ""
 }
 
-func (a *App) startServer() error {
-	a.server = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", a.port),
-		Handler: a.handler,
-	}
+// Transport returns the underlying transport for advanced usage
+func (a *App) Transport() transport.Transport {
+	return a.transport
+}
 
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
-		if err := a.server.ListenAndServe(); err != http.ErrServerClosed {
-			fmt.Printf("Server error: %v\n", err)
-		}
-	}()
-
-	return nil
+// Hub returns the WebSocket hub for registering handlers
+func (a *App) Hub() *ws.Hub {
+	return a.wsHub
 }
 
 func (a *App) runWebview() {
@@ -128,7 +161,19 @@ func (a *App) runWebview() {
 		a.wv.SetSize(a.config.Width, a.config.Height, webview.HintFixed)
 	}
 
-	a.wv.Navigate(a.URL())
+	// Inject the secret into the webview before navigation
+	// Using Init() ensures the script runs before any page scripts
+	cfg := a.transport.Config()
+	if cfg != nil && cfg.Secret != "" {
+		js := "window.__IRGO_SECRET__ = '" + cfg.Secret + "';"
+		a.wv.Init(js)
+	}
+
+	// Navigate to the server URL
+	url := a.URL()
+	if url != "" {
+		a.wv.Navigate(url)
+	}
 
 	// Run blocks until window is closed
 	a.wv.Run()
@@ -139,8 +184,8 @@ func (a *App) Shutdown() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if a.server != nil {
-		a.server.Shutdown(ctx)
+	if a.transport != nil {
+		a.transport.Stop(ctx)
 	}
 
 	a.wg.Wait()
@@ -160,5 +205,19 @@ func (a *App) Bind(name string, fn interface{}) error {
 func (a *App) Eval(js string) {
 	if a.wv != nil {
 		a.wv.Eval(js)
+	}
+}
+
+// RegisterChannelHandler registers a handler for WebSocket channels matching a pattern
+func (a *App) RegisterChannelHandler(pattern string, handler transport.ChannelHandler) {
+	if a.transport != nil {
+		a.transport.RegisterChannelHandler(pattern, handler)
+	}
+}
+
+// SetDefaultChannelHandler sets the default handler for WebSocket channels
+func (a *App) SetDefaultChannelHandler(handler transport.ChannelHandler) {
+	if a.transport != nil {
+		a.transport.SetDefaultChannelHandler(handler)
 	}
 }

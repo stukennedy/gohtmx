@@ -1,6 +1,7 @@
 package websocket
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -229,4 +230,42 @@ func (s *Session) CleanupExpiredPending(ttl time.Duration) {
 			delete(s.pending, id)
 		}
 	}
+}
+
+// SendStream sends a stream of envelopes with backpressure handling.
+// It blocks until all envelopes are sent, the stream is closed, or ctx is cancelled.
+// Returns ErrSessionClosed if the session is closed during streaming.
+func (s *Session) SendStream(ctx context.Context, stream <-chan *Envelope) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case envelope, ok := <-stream:
+			if !ok {
+				return nil // Stream completed successfully
+			}
+			if !s.Send(envelope) {
+				return ErrSessionClosed
+			}
+		}
+	}
+}
+
+// SendHTMLStream sends a stream of HTML updates to a target element.
+// Convenience wrapper around SendStream for HTML content.
+func (s *Session) SendHTMLStream(ctx context.Context, target string, htmlStream <-chan string) error {
+	envelopes := make(chan *Envelope)
+
+	go func() {
+		defer close(envelopes)
+		for html := range htmlStream {
+			select {
+			case <-ctx.Done():
+				return
+			case envelopes <- HTMLEnvelope(target, html):
+			}
+		}
+	}()
+
+	return s.SendStream(ctx, envelopes)
 }
