@@ -61,35 +61,35 @@ func TestHTTPAdapterPOSTRequest(t *testing.T) {
 	}
 }
 
-func TestHTTPAdapterHTMXHeaders(t *testing.T) {
+func TestHTTPAdapterDatastarHeaders(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check HTMX headers were passed through
-		if r.Header.Get("HX-Request") != "true" {
-			t.Error("expected HX-Request header")
+		// Check Datastar SSE headers were passed through
+		if r.Header.Get("Accept") != "text/event-stream" {
+			t.Error("expected Accept: text/event-stream header")
 		}
-		if r.Header.Get("HX-Target") != "#content" {
-			t.Error("expected HX-Target header")
+		if r.Header.Get("X-Custom") != "value" {
+			t.Error("expected X-Custom header")
 		}
 
-		// Send HTMX response headers
-		w.Header().Set("HX-Trigger", "refresh")
-		w.Header().Set("HX-Reswap", "outerHTML")
-		w.Write([]byte("<div>updated</div>"))
+		// Send SSE response
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write([]byte("event: datastar-patch-elements\ndata: fragments <div>updated</div>\n\n"))
 	})
 
 	adapter := NewHTTPAdapter(handler)
 
-	req := core.NewRequest("GET", "/fragment")
-	req.SetHeader("HX-Request", "true")
-	req.SetHeader("HX-Target", "#content")
+	req := core.NewRequest("GET", "/sse")
+	req.SetHeader("Accept", "text/event-stream")
+	req.SetHeader("X-Custom", "value")
 
 	resp := adapter.HandleRequest(req)
 
-	if resp.GetHeader("HX-Trigger") != "refresh" {
-		t.Error("expected HX-Trigger header in response")
+	if resp.GetHeader("Content-Type") != "text/event-stream" {
+		t.Error("expected Content-Type: text/event-stream header in response")
 	}
-	if resp.GetHeader("HX-Reswap") != "outerHTML" {
-		t.Error("expected HX-Reswap header in response")
+	if resp.GetHeader("Cache-Control") != "no-cache" {
+		t.Error("expected Cache-Control header in response")
 	}
 }
 

@@ -15,9 +15,10 @@
 //	    resp = client.PostForm("/todos", map[string]string{"title": "New Todo"})
 //	    resp.AssertStatus(t, 200)
 //
-//	    // HTMX request
-//	    resp = client.HTMX().Get("/fragment")
+//	    // Datastar SSE request
+//	    resp = client.Datastar().Get("/greeting")
 //	    resp.AssertStatus(t, 200)
+//	    resp.AssertSSE(t)
 //	}
 package testing
 
@@ -58,14 +59,15 @@ func (c *Client) WithHeader(key, value string) *Client {
 	return newClient
 }
 
-// HTMX returns a client configured for HTMX requests.
-func (c *Client) HTMX() *Client {
-	return c.WithHeader("HX-Request", "true")
+// Datastar returns a client configured for Datastar SSE requests.
+func (c *Client) Datastar() *Client {
+	return c.WithHeader("Accept", "text/event-stream")
 }
 
-// HTMXWithTarget returns a client configured for HTMX requests with a specific target.
-func (c *Client) HTMXWithTarget(target string) *Client {
-	return c.HTMX().WithHeader("HX-Target", target)
+// DatastarWithSignals returns a client configured for Datastar requests with initial signals.
+func (c *Client) DatastarWithSignals(signalsJSON string) *Client {
+	return c.Datastar().WithHeader("Content-Type", "application/json").
+		WithHeader("Datastar-Signals", signalsJSON)
 }
 
 // Get performs a GET request.
@@ -251,22 +253,27 @@ func (r *Response) AssertHeaderExists(t *testing.T, key string) {
 	}
 }
 
-// AssertHTMXTrigger asserts the HX-Trigger header has the expected value.
-func (r *Response) AssertHTMXTrigger(t *testing.T, expected string) {
+// AssertSSE asserts the response is a valid SSE response.
+func (r *Response) AssertSSE(t *testing.T) {
 	t.Helper()
-	r.AssertHeader(t, "HX-Trigger", expected)
+	r.AssertContentType(t, "text/event-stream")
 }
 
-// AssertHTMXRedirect asserts the HX-Redirect header has the expected value.
-func (r *Response) AssertHTMXRedirect(t *testing.T, expected string) {
+// AssertSSEEvent asserts the response contains a specific SSE event type.
+func (r *Response) AssertSSEEvent(t *testing.T, eventType string) {
 	t.Helper()
-	r.AssertHeader(t, "HX-Redirect", expected)
+	expected := "event: " + eventType
+	if !strings.Contains(r.BodyString(), expected) {
+		t.Errorf("expected SSE event %q in body\nBody: %s", eventType, r.BodyString())
+	}
 }
 
-// AssertHTMXRefresh asserts the HX-Refresh header is set.
-func (r *Response) AssertHTMXRefresh(t *testing.T) {
+// AssertSSEContains asserts the SSE response data contains the given string.
+func (r *Response) AssertSSEContains(t *testing.T, expected string) {
 	t.Helper()
-	r.AssertHeader(t, "HX-Refresh", "true")
+	if !strings.Contains(r.BodyString(), expected) {
+		t.Errorf("expected SSE data to contain %q\nBody: %s", expected, r.BodyString())
+	}
 }
 
 // AssertContentType asserts the Content-Type header.
@@ -431,9 +438,9 @@ func (rb *RequestBuilder) WithJSONBody(json string) *RequestBuilder {
 	return rb
 }
 
-// AsHTMX marks this as an HTMX request.
-func (rb *RequestBuilder) AsHTMX() *RequestBuilder {
-	rb.headers["HX-Request"] = "true"
+// AsDatastar marks this as a Datastar SSE request.
+func (rb *RequestBuilder) AsDatastar() *RequestBuilder {
+	rb.headers["Accept"] = "text/event-stream"
 	return rb
 }
 

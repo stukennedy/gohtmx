@@ -29,7 +29,7 @@ func NewRouter() *router.Router {
 	})
 
 	// Mount handlers
-	handlers.Mount(r, Renderer)
+	handlers.Mount(r)
 
 	return r
 }

@@ -25,10 +25,10 @@ func newTestHandler() http.Handler {
 		w.Write([]byte("<ul><li>User 1</li></ul>"))
 	})
 
-	mux.HandleFunc("/htmx", func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("HX-Request") == "true" {
-			w.Header().Set("HX-Trigger", "itemUpdated")
-			w.Write([]byte("<div>HTMX Response</div>"))
+	mux.HandleFunc("/sse", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") == "text/event-stream" {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.Write([]byte("event: datastar-patch-elements\ndata: fragments <div>SSE Response</div>\n\n"))
 			return
 		}
 		w.Write([]byte("<div>Regular Response</div>"))
@@ -81,17 +81,18 @@ func TestClientPostForm(t *testing.T) {
 	resp.AssertContains(t, "John")
 }
 
-func TestClientHTMX(t *testing.T) {
+func TestClientDatastar(t *testing.T) {
 	client := NewClient(newTestHandler())
 
 	// Regular request
-	resp := client.Get("/htmx")
+	resp := client.Get("/sse")
 	resp.AssertContains(t, "Regular Response")
 
-	// HTMX request
-	resp = client.HTMX().Get("/htmx")
-	resp.AssertContains(t, "HTMX Response")
-	resp.AssertHTMXTrigger(t, "itemUpdated")
+	// Datastar SSE request
+	resp = client.Datastar().Get("/sse")
+	resp.AssertSSE(t)
+	resp.AssertSSEEvent(t, "datastar-patch-elements")
+	resp.AssertSSEContains(t, "SSE Response")
 }
 
 func TestClientDelete(t *testing.T) {
@@ -152,14 +153,15 @@ func TestRequestBuilder(t *testing.T) {
 	resp.AssertContains(t, "Builder Test")
 }
 
-func TestRequestBuilderHTMX(t *testing.T) {
+func TestRequestBuilderDatastar(t *testing.T) {
 	handler := newTestHandler()
 
-	resp := NewRequest("GET", "/htmx").
-		AsHTMX().
+	resp := NewRequest("GET", "/sse").
+		AsDatastar().
 		Execute(handler)
 
-	resp.AssertContains(t, "HTMX Response")
+	resp.AssertSSE(t)
+	resp.AssertSSEContains(t, "SSE Response")
 }
 
 func TestWithHeader(t *testing.T) {

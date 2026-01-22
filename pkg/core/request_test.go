@@ -77,16 +77,16 @@ func TestRequestQueryValue(t *testing.T) {
 	}
 }
 
-func TestRequestIsHTMX(t *testing.T) {
+func TestRequestIsDatastar(t *testing.T) {
 	req := NewRequest("GET", "/")
 
-	if req.IsHTMX() {
-		t.Error("expected IsHTMX() = false for new request")
+	if req.IsDatastar() {
+		t.Error("expected IsDatastar() = false for new request")
 	}
 
-	req.SetHeader("HX-Request", "true")
-	if !req.IsHTMX() {
-		t.Error("expected IsHTMX() = true after setting HX-Request header")
+	req.SetHeader("Accept", "text/event-stream")
+	if !req.IsDatastar() {
+		t.Error("expected IsDatastar() = true after setting Accept header to text/event-stream")
 	}
 }
 

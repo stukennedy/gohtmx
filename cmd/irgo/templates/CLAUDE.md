@@ -1,14 +1,14 @@
 # Irgo App Development Guide
 
-This app is built with **Irgo**, a hypermedia-driven framework for cross-platform apps using Go + HTMX 4 + Templ.
+This app is built with **Irgo**, a hypermedia-driven framework for cross-platform apps using Go + Datastar + Templ.
 
 ## Architecture
 
 ```
-User Interaction → HTMX Request → Go Handler → Templ Template → HTML Response → DOM Update
+User Interaction → Datastar Request → Go Handler → Templ Template → SSE Response → DOM Update
 ```
 
-**Key principle:** The server returns HTML fragments, not JSON. HTMX handles DOM updates.
+**Key principle:** The server returns HTML fragments via SSE (Server-Sent Events), not JSON. Datastar handles DOM updates.
 
 ## Project Structure
 
@@ -18,15 +18,13 @@ User Interaction → HTMX Request → Go Handler → Templ Template → HTML Res
 ├── app/
 │   └── app.go           # Router setup and route definitions
 ├── handlers/
-│   └── handlers.go      # HTTP handlers that return HTML
+│   └── handlers.go      # HTTP handlers returning HTML or SSE
 ├── templates/
 │   ├── layout.templ     # Base HTML layout
 │   └── *.templ          # Page and component templates
 ├── static/
 │   ├── css/output.css   # Tailwind CSS (generated)
-│   └── js/
-│       ├── htmx.min.js  # HTMX 4 library
-│       └── hx-ws.js     # WebSocket extension
+│   └── js/datastar.js   # Datastar library
 └── mobile/
     └── mobile.go        # Mobile bridge (optional)
 ```
@@ -44,7 +42,9 @@ irgo templ               # Regenerate templ files
 
 ## Router & Handlers
 
-Handlers receive a `router.Context` and return `(string, error)`. The string is HTML.
+### Standard Handlers (Full Page Loads)
+
+Standard handlers return `(string, error)`. The string is HTML.
 
 ```go
 import (
@@ -52,18 +52,32 @@ import (
     "github.com/stukennedy/irgo/pkg/render"
 )
 
-// Register routes in app/app.go or handlers/handlers.go
-r.GET("/users/{id}", func(ctx *router.Context) (string, error) {
-    id := ctx.Param("id")           // URL path parameter
-    query := ctx.Query("q")         // Query string
-    form := ctx.FormValue("name")   // Form field
+// Full page load
+r.GET("/", func(ctx *router.Context) (string, error) {
+    return renderer.Render(templates.HomePage())
+})
+```
 
-    return renderer.Render(templates.UserProfile(user))
+### Datastar SSE Handlers
+
+Datastar handlers return `error` only and use `ctx.SSE()` for responses.
+
+```go
+// Datastar SSE endpoint
+r.DSGet("/greeting", func(ctx *router.Context) error {
+    var signals struct {
+        Name string `json:"name"`
+    }
+    ctx.ReadSignals(&signals)
+
+    sse := ctx.SSE()
+    return sse.PatchTempl(templates.Greeting(signals.Name))
 })
 
-r.POST("/users", createUser)
-r.PUT("/users/{id}", updateUser)
-r.DELETE("/users/{id}", deleteUser)
+r.DSPost("/todos", createTodo)
+r.DSPut("/todos/{id}", updateTodo)
+r.DSPatch("/todos/{id}", toggleTodo)
+r.DSDelete("/todos/{id}", deleteTodo)
 ```
 
 ### Context Methods
@@ -73,25 +87,27 @@ r.DELETE("/users/{id}", deleteUser)
 - `ctx.Query("q")` - Query string parameter
 - `ctx.FormValue("name")` - Form field value
 - `ctx.Header("X-Custom")` - Request header
+- `ctx.ReadSignals(&signals)` - Parse Datastar signals from request
 
-**HTMX Detection:**
-- `ctx.IsHTMX()` - true if HX-Request header present
-- `ctx.HXTarget()` - HX-Target header value
-- `ctx.HXTrigger()` - HX-Trigger header value
+**Datastar Detection:**
+- `ctx.IsDatastar()` - true if Accept: text/event-stream
 
-**Output:**
+**SSE Output (for Datastar handlers):**
+```go
+sse := ctx.SSE()
+sse.PatchTempl(templates.Component())      // Patch templ component
+sse.PatchHTML(`<div id="x">HTML</div>`)    // Patch raw HTML
+sse.PatchSignals(map[string]any{...})      // Update client signals
+sse.Remove("#element-id")                   // Remove element
+sse.Redirect("/new-url")                    // Navigate browser
+```
+
+**Standard Output (for full page handlers):**
 - Return HTML string from handler
-- `ctx.Redirect("/path")` - HTMX-aware redirect
+- `ctx.Redirect("/path")` - HTTP redirect
 - `ctx.NotFound("message")` - 404 response
 - `ctx.BadRequest("message")` - 400 response
 - `ctx.NoContent()` - 204 response
-
-**HTMX Response Headers:**
-- `ctx.PushURL("/path")` - Update browser URL
-- `ctx.Trigger("eventName")` - Trigger client-side event
-- `ctx.Retarget("#selector")` - Change swap target
-- `ctx.Reswap("innerHTML")` - Change swap strategy
-- `ctx.Refresh()` - Full page refresh
 
 ## Templ Templates
 
@@ -170,296 +186,140 @@ templ RawContent(html string) {
 ```go
 renderer := render.NewTemplRenderer()
 
+// Standard handler
 func handler(ctx *router.Context) (string, error) {
     return renderer.Render(templates.MyComponent(data))
 }
-```
 
-## HTMX 4 Patterns
-
-This project uses **HTMX 4** from `https://four.htmx.org/`. Key differences from HTMX 1.x/2.x:
-- Improved extension system
-- Better WebSocket support via `hx-ws` extension
-- Enhanced event handling
-
-### Core Attributes
-
-```html
-<!-- Trigger requests -->
-<button hx-get="/data" hx-target="#result">Load</button>
-<button hx-post="/submit" hx-target="#result">Submit</button>
-<button hx-put="/update" hx-target="#result">Update</button>
-<button hx-delete="/remove" hx-target="#result">Delete</button>
-<button hx-patch="/partial" hx-target="#result">Patch</button>
-
-<!-- Target element for response -->
-hx-target="#id"           <!-- By ID -->
-hx-target="this"          <!-- Current element -->
-hx-target="closest .card" <!-- Closest ancestor -->
-hx-target="next .item"    <!-- Next sibling -->
-hx-target="previous div"  <!-- Previous sibling -->
-
-<!-- How to swap content -->
-hx-swap="innerHTML"       <!-- Replace inner content (default) -->
-hx-swap="outerHTML"       <!-- Replace entire element -->
-hx-swap="beforebegin"     <!-- Insert before element -->
-hx-swap="afterbegin"      <!-- Insert at start of element -->
-hx-swap="beforeend"       <!-- Insert at end of element -->
-hx-swap="afterend"        <!-- Insert after element -->
-hx-swap="delete"          <!-- Delete the target element -->
-hx-swap="none"            <!-- Don't swap anything -->
-
-<!-- Swap modifiers -->
-hx-swap="innerHTML swap:500ms"      <!-- Delay swap -->
-hx-swap="innerHTML settle:500ms"    <!-- Delay settle -->
-hx-swap="innerHTML scroll:top"      <!-- Scroll after swap -->
-hx-swap="innerHTML show:top"        <!-- Show element -->
-hx-swap="innerHTML transition:true" <!-- Use view transitions -->
-```
-
-### Triggers
-
-```html
-<!-- Event triggers -->
-hx-trigger="click"                    <!-- On click (default for buttons) -->
-hx-trigger="change"                   <!-- On change (for inputs) -->
-hx-trigger="submit"                   <!-- On form submit -->
-hx-trigger="keyup"                    <!-- On keyup -->
-hx-trigger="keyup changed delay:300ms" <!-- Debounced, only if changed -->
-hx-trigger="load"                     <!-- On element load -->
-hx-trigger="revealed"                 <!-- When scrolled into view -->
-hx-trigger="intersect"                <!-- Intersection observer -->
-hx-trigger="every 5s"                 <!-- Polling -->
-
-<!-- Trigger modifiers -->
-hx-trigger="click once"               <!-- Only trigger once -->
-hx-trigger="keyup changed"            <!-- Only if value changed -->
-hx-trigger="click consume"            <!-- Stop event propagation -->
-hx-trigger="click queue:first"        <!-- Queue behavior -->
-hx-trigger="click from:body"          <!-- Listen on different element -->
-hx-trigger="click target:.child"      <!-- Filter to specific targets -->
-```
-
-### Common Patterns
-
-**Click to load:**
-```go
-templ LoadButton() {
-    <button hx-get="/data" hx-target="#result" hx-swap="innerHTML">
-        Load Data
-    </button>
-    <div id="result"></div>
+// Datastar handler
+func sseHandler(ctx *router.Context) error {
+    sse := ctx.SSE()
+    return sse.PatchTempl(templates.MyComponent(data))
 }
 ```
 
-**Form submission:**
-```go
-templ TodoForm() {
-    <form hx-post="/todos" hx-target="#todo-list" hx-swap="beforeend"
-          hx-on::after-request="this.reset()">
-        <input type="text" name="title" required/>
-        <button type="submit">Add</button>
-    </form>
-    <div id="todo-list"></div>
-}
-```
+## Datastar Patterns
 
-**Delete with confirmation:**
-```go
-templ DeleteButton(id string) {
-    <button
-        hx-delete={ "/items/" + id }
-        hx-target={ "#item-" + id }
-        hx-swap="delete"
-        hx-confirm="Are you sure?"
-    >Delete</button>
-}
-```
+This project uses **Datastar** from `https://data-star.dev/`. Key concepts:
+- **Signals**: Reactive client-side state
+- **SSE**: Server responses as event streams
+- **`data-*` attributes**: Declarative behavior
 
-**Inline editing:**
-```go
-templ DisplayMode(id, value string) {
-    <span id={ "field-" + id }
-          hx-get={ "/edit/" + id }
-          hx-trigger="click"
-          hx-swap="outerHTML"
-          class="cursor-pointer hover:bg-gray-100">
-        { value }
-    </span>
-}
-
-templ EditMode(id, value string) {
-    <form hx-put={ "/save/" + id }
-          hx-target={ "#field-" + id }
-          hx-swap="outerHTML">
-        <input type="text" name="value" value={ value } autofocus/>
-        <button type="submit">Save</button>
-    </form>
-}
-```
-
-**Infinite scroll:**
-```go
-templ ItemList(items []Item, page int) {
-    for i, item := range items {
-        if i == len(items)-1 && len(items) > 0 {
-            <div hx-get={ fmt.Sprintf("/items?page=%d", page+1) }
-                 hx-trigger="revealed"
-                 hx-swap="afterend">
-                @ItemCard(item)
-            </div>
-        } else {
-            @ItemCard(item)
-        }
-    }
-}
-```
-
-**Active search:**
-```go
-templ SearchBox() {
-    <input type="search" name="q"
-           hx-get="/search"
-           hx-trigger="keyup changed delay:300ms"
-           hx-target="#results"
-           placeholder="Search..."/>
-    <div id="results"></div>
-}
-```
-
-**Out-of-band updates (update multiple elements):**
-```go
-templ NewItemWithCount(item Item, count int) {
-    <!-- Main response swapped to target -->
-    <div id={ "item-" + item.ID }>{ item.Name }</div>
-
-    <!-- OOB: Also update the counter -->
-    <span id="item-count" hx-swap-oob="true">{ fmt.Sprintf("%d", count) }</span>
-}
-```
-
-**Loading indicator:**
-```go
-templ LoadingButton() {
-    <button hx-get="/slow-endpoint" hx-target="#result">
-        <span class="htmx-indicator">Loading...</span>
-        <span>Click Me</span>
-    </button>
-}
-```
-
-```css
-/* In your CSS */
-.htmx-indicator { display: none; }
-.htmx-request .htmx-indicator { display: inline; }
-.htmx-request .htmx-indicator + span { display: none; }
-```
-
-### Request Headers & Parameters
-
-```html
-<!-- Include additional values -->
-hx-include="[name='csrf']"            <!-- Include input by selector -->
-hx-include="closest form"             <!-- Include all form fields -->
-
-<!-- Add request parameters -->
-hx-vals='{"key": "value"}'            <!-- Static JSON values -->
-hx-vals="js:{key: computeValue()}"    <!-- Dynamic JS values -->
-
-<!-- Add request headers -->
-hx-headers='{"X-Custom": "value"}'
-```
-
-## WebSocket Extension (hx-ws)
-
-For real-time features, use the WebSocket extension included in this project.
-
-### Server Setup
+### Signals (Client-Side State)
 
 ```go
-import (
-    "github.com/gorilla/websocket"
-    "github.com/stukennedy/irgo/pkg/router"
-)
-
-var upgrader = websocket.Upgrader{
-    CheckOrigin: func(r *http.Request) bool { return true },
+// Initialize signals
+templ Counter() {
+    <div data-signals="{count: 0}">
+        <span data-text="$count">0</span>
+        <button data-on:click="$count++">+</button>
+    </div>
 }
 
-func wsHandler(ctx *router.Context) (string, error) {
-    conn, err := upgrader.Upgrade(ctx.Response(), ctx.Request(), nil)
-    if err != nil {
-        return "", err
-    }
-    defer conn.Close()
-
-    // Send HTML fragments to update the page
-    for {
-        // Read message from client (optional)
-        _, msg, err := conn.ReadMessage()
-        if err != nil {
-            break
-        }
-
-        // Send HTML fragment back
-        html := `<div id="messages" hx-swap-oob="beforeend">
-            <p>New message received</p>
-        </div>`
-        conn.WriteMessage(websocket.TextMessage, []byte(html))
-    }
-    return "", nil
-}
-
-// Register the route
-r.GET("/ws", wsHandler)
-```
-
-### Client Setup
-
-```go
-templ ChatRoom() {
-    <!-- Connect to WebSocket -->
-    <div hx-ext="hx-ws" hx-ws-connect="/ws">
-        <!-- Messages appear here via OOB updates -->
-        <div id="messages"></div>
-
-        <!-- Form sends via WebSocket -->
-        <form hx-ws-send>
-            <input type="text" name="message"/>
-            <button type="submit">Send</button>
-        </form>
+// Two-way binding
+templ SearchForm() {
+    <div data-signals="{query: ''}">
+        <input type="text" data-bind:query placeholder="Search..."/>
+        <span data-text="$query.length + ' characters'"></span>
     </div>
 }
 ```
 
-### WebSocket Attributes
-
-```html
-hx-ws-connect="/ws"       <!-- Connect to WebSocket endpoint -->
-hx-ws-send                <!-- Send form data via WebSocket -->
-```
-
-### Sending Updates from Server
-
-The server sends HTML fragments. Use `hx-swap-oob="true"` to update specific elements:
+### Server Requests
 
 ```go
-// Update a specific element by ID
-html := `<div id="status" hx-swap-oob="true">Connected</div>`
-conn.WriteMessage(websocket.TextMessage, []byte(html))
+// GET request
+templ LoadButton() {
+    <button data-on:click="@get('/data')">Load</button>
+    <div id="result"></div>
+}
 
-// Append to a list
-html := `<div id="messages" hx-swap-oob="beforeend">
-    <p>New message</p>
-</div>`
-conn.WriteMessage(websocket.TextMessage, []byte(html))
+// POST request
+templ TodoForm() {
+    <div data-signals="{title: ''}">
+        <input type="text" data-bind:title placeholder="New todo"/>
+        <button data-on:click="@post('/todos')">Add</button>
+    </div>
+    <ul id="todo-list"></ul>
+}
 
-// Update multiple elements at once
-html := `
-<div id="user-count" hx-swap-oob="true">5 users</div>
-<div id="last-activity" hx-swap-oob="true">Just now</div>
-`
-conn.WriteMessage(websocket.TextMessage, []byte(html))
+// DELETE request
+templ DeleteButton(id string) {
+    <button data-on:click={ fmt.Sprintf("@delete('/todos/%s')", id) }>
+        Delete
+    </button>
+}
+```
+
+### Event Modifiers
+
+```go
+// Debounce input (wait 300ms after typing stops)
+templ SearchInput() {
+    <input
+        type="text"
+        data-bind:query
+        data-on:input__debounce.300ms="@get('/search')"
+        placeholder="Search..."
+    />
+}
+
+// Prevent default form submission
+templ Form() {
+    <form data-on:submit__prevent="@post('/submit')">
+        <input type="text" data-bind:name/>
+        <button type="submit">Submit</button>
+    </form>
+}
+
+// Trigger once (lazy loading)
+templ LazyLoad() {
+    <div data-on:intersect__once="@get('/lazy-content')">
+        Loading...
+    </div>
+}
+```
+
+### Conditional Display
+
+```go
+// Show/hide based on signal
+templ Modal() {
+    <div data-signals="{showModal: false}">
+        <button data-on:click="$showModal = true">Open</button>
+        <div data-show="$showModal" class="modal">
+            <p>Modal content</p>
+            <button data-on:click="$showModal = false">Close</button>
+        </div>
+    </div>
+}
+
+// Dynamic classes
+templ TabButton(name string) {
+    <button
+        data-class:active="$activeTab === 'name'"
+        data-on:click="$activeTab = 'name'"
+    >
+        { name }
+    </button>
+}
+```
+
+### Loading Indicators
+
+```go
+templ LoadButton() {
+    <div data-signals="{loading: false}">
+        <button
+            data-on:click="@get('/slow-endpoint')"
+            data-indicator:loading
+            data-attr:disabled="$loading"
+        >
+            <span data-show="!$loading">Load Data</span>
+            <span data-show="$loading">Loading...</span>
+        </button>
+    </div>
+}
 ```
 
 ## Build Tags
@@ -480,78 +340,105 @@ The framework uses Go build tags to separate platform code:
 ### CRUD Operations
 
 ```go
-func Mount(r *router.Router, renderer *render.TemplRenderer) {
-    // List
-    r.GET("/items", func(ctx *router.Context) (string, error) {
-        items, _ := db.GetItems()
-        return renderer.Render(templates.ItemList(items))
+func Mount(r *router.Router) {
+    // Full page - list
+    r.GET("/", func(ctx *router.Context) (string, error) {
+        items := db.GetItems()
+        return renderer.Render(templates.ItemsPage(items))
     })
 
-    // Create
-    r.POST("/items", func(ctx *router.Context) (string, error) {
-        name := ctx.FormValue("name")
-        if name == "" {
-            return renderer.Render(templates.Error("Name required"))
+    // SSE - create
+    r.DSPost("/items", func(ctx *router.Context) error {
+        var signals struct {
+            Name string `json:"name"`
         }
-        item, _ := db.CreateItem(name)
-        return renderer.Render(templates.ItemRow(item))
+        ctx.ReadSignals(&signals)
+
+        if signals.Name == "" {
+            return ctx.SSE().PatchTempl(templates.Error("Name required"))
+        }
+
+        item := db.CreateItem(signals.Name)
+        sse := ctx.SSE()
+        sse.PatchTempl(templates.ItemRow(item))
+        sse.PatchSignals(map[string]any{"name": ""}) // Clear input
+        return nil
     })
 
-    // Update
-    r.PUT("/items/{id}", func(ctx *router.Context) (string, error) {
+    // SSE - update
+    r.DSPatch("/items/{id}", func(ctx *router.Context) error {
         id := ctx.Param("id")
-        name := ctx.FormValue("name")
-        item, _ := db.UpdateItem(id, name)
-        return renderer.Render(templates.ItemRow(item))
+        item := db.ToggleItem(id)
+        return ctx.SSE().PatchTempl(templates.ItemRow(item))
     })
 
-    // Delete
-    r.DELETE("/items/{id}", func(ctx *router.Context) (string, error) {
+    // SSE - delete
+    r.DSDelete("/items/{id}", func(ctx *router.Context) error {
         id := ctx.Param("id")
         db.DeleteItem(id)
-        return "", nil // hx-swap="delete" removes the element
+        return ctx.SSE().Remove("#item-" + id)
     })
 }
-```
-
-### Conditional Full Page vs Fragment
-
-```go
-r.GET("/page", func(ctx *router.Context) (string, error) {
-    data := fetchData()
-
-    if ctx.IsHTMX() {
-        // HTMX request: return just the fragment
-        return renderer.Render(templates.PageContent(data))
-    }
-    // Full page load: return with layout
-    return renderer.Render(templates.FullPage(data))
-})
 ```
 
 ### Validation Errors
 
 ```go
-r.POST("/register", func(ctx *router.Context) (string, error) {
-    email := ctx.FormValue("email")
+r.DSPost("/register", func(ctx *router.Context) error {
+    var signals struct {
+        Email string `json:"email"`
+    }
+    ctx.ReadSignals(&signals)
 
-    if !isValidEmail(email) {
-        // Return error message to be swapped into form
-        return renderer.Render(templates.FieldError("email", "Invalid email"))
+    if !isValidEmail(signals.Email) {
+        return ctx.SSE().PatchTempl(templates.FieldError("email", "Invalid email"))
     }
 
-    // Success - trigger event to close modal or redirect
-    ctx.Trigger("registration-complete")
-    return renderer.Render(templates.SuccessMessage("Registered!"))
+    // Success - redirect to dashboard
+    return ctx.SSE().Redirect("/dashboard")
 })
 ```
+
+## Datastar Attribute Reference
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `data-signals` | Initialize signals | `data-signals="{count: 0}"` |
+| `data-bind:X` | Two-way binding | `data-bind:name` |
+| `data-text` | Text content | `data-text="$count"` |
+| `data-show` | Show/hide | `data-show="$visible"` |
+| `data-class:X` | Conditional class | `data-class:active="$isActive"` |
+| `data-attr:X` | Dynamic attribute | `data-attr:disabled="$loading"` |
+| `data-on:event` | Event handler | `data-on:click="@get('/data')"` |
+| `data-indicator:X` | Loading indicator | `data-indicator:loading` |
+
+### HTTP Actions
+
+| Expression | Description |
+|------------|-------------|
+| `@get('/url')` | GET request |
+| `@post('/url')` | POST request |
+| `@put('/url')` | PUT request |
+| `@patch('/url')` | PATCH request |
+| `@delete('/url')` | DELETE request |
+
+### Event Modifiers
+
+| Modifier | Description |
+|----------|-------------|
+| `__prevent` | Prevent default |
+| `__stop` | Stop propagation |
+| `__once` | Trigger once |
+| `__debounce.Xms` | Debounce (e.g., `__debounce.300ms`) |
+| `__throttle.Xms` | Throttle (e.g., `__throttle.100ms`) |
 
 ## Tips
 
 1. **Always read files before editing** - understand existing code first
 2. **Run `irgo templ`** after modifying `.templ` files to regenerate Go code
 3. **Use `irgo dev`** during development for hot reload
-4. **Return HTML fragments**, not JSON - this is hypermedia-driven
-5. **Use `hx-swap-oob`** to update multiple page elements from one response
-6. **Prefer small, focused components** that can be reused and swapped independently
-7. **Test in desktop mode** with `irgo run desktop --dev` for browser devtools
+4. **Return HTML fragments via SSE**, not JSON - this is hypermedia-driven
+5. **Elements need IDs** for Datastar to patch them
+6. **Use signals for client state** - avoid unnecessary server roundtrips
+7. **Prefer small, focused components** that can be reused and patched independently
+8. **Test in desktop mode** with `irgo run desktop --dev` for browser devtools

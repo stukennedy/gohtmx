@@ -9,37 +9,38 @@ import (
 type contextKey string
 
 const (
-	// HXRequestKey is the context key for HTMX request detection.
-	HXRequestKey contextKey = "hx-request"
+	// DatastarRequestKey is the context key for Datastar SSE request detection.
+	DatastarRequestKey contextKey = "datastar-request"
 )
 
-// HXRequestMiddleware detects and tags HTMX requests.
-func HXRequestMiddleware(next http.Handler) http.Handler {
+// DatastarRequestMiddleware detects and tags Datastar SSE requests.
+// Datastar sends Accept: text/event-stream for SSE requests.
+func DatastarRequestMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		isHX := r.Header.Get("HX-Request") == "true"
-		ctx := context.WithValue(r.Context(), HXRequestKey, isHX)
+		isDatastar := r.Header.Get("Accept") == "text/event-stream"
+		ctx := context.WithValue(r.Context(), DatastarRequestKey, isDatastar)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// IsHXRequest returns true if the request is from HTMX.
-func IsHXRequest(r *http.Request) bool {
-	if v, ok := r.Context().Value(HXRequestKey).(bool); ok {
+// IsDatastarRequest returns true if the request is a Datastar SSE request.
+func IsDatastarRequest(r *http.Request) bool {
+	if v, ok := r.Context().Value(DatastarRequestKey).(bool); ok {
 		return v
 	}
-	return r.Header.Get("HX-Request") == "true"
+	return r.Header.Get("Accept") == "text/event-stream"
 }
 
 // LayoutWrapper wraps fragment responses in a full page layout
-// when the request is not from HTMX (direct browser navigation).
+// when the request is not from Datastar (direct browser navigation).
 type LayoutWrapper struct {
 	Layout func(content string) string
 }
 
-// Wrap returns middleware that wraps non-HTMX responses in a layout.
+// Wrap returns middleware that wraps non-Datastar responses in a layout.
 func (l *LayoutWrapper) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if IsHXRequest(r) || l.Layout == nil {
+		if IsDatastarRequest(r) || l.Layout == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -115,7 +116,7 @@ func CORSMiddleware(allowedOrigins ...string) func(http.Handler) http.Handler {
 			if allowed {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, HX-Request, HX-Target, HX-Trigger")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
@@ -129,11 +130,11 @@ func CORSMiddleware(allowedOrigins ...string) func(http.Handler) http.Handler {
 	}
 }
 
-// RequireHTMX returns 400 if the request is not from HTMX.
-func RequireHTMX(next http.Handler) http.Handler {
+// RequireDatastar returns 400 if the request is not a Datastar SSE request.
+func RequireDatastar(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !IsHXRequest(r) {
-			http.Error(w, "HTMX request required", http.StatusBadRequest)
+		if !IsDatastarRequest(r) {
+			http.Error(w, "Datastar SSE request required", http.StatusBadRequest)
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -234,24 +234,24 @@ func TestMiddleware(t *testing.T) {
 	}
 }
 
-func TestHTMXHeaders(t *testing.T) {
+func TestDatastarDetection(t *testing.T) {
 	r := New()
 	r.GET("/fragment", func(ctx *Context) (string, error) {
-		if ctx.IsHTMX() {
-			return "<div>HTMX Request</div>", nil
+		if ctx.IsDatastar() {
+			return "<div>Datastar Request</div>", nil
 		}
 		return "<div>Regular Request</div>", nil
 	})
 
-	// Test HTMX request
+	// Test Datastar SSE request
 	req := httptest.NewRequest("GET", "/fragment", nil)
-	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Accept", "text/event-stream")
 	w := httptest.NewRecorder()
 
 	r.ServeHTTP(w, req)
 
-	if !strings.Contains(w.Body.String(), "HTMX Request") {
-		t.Errorf("expected HTMX response, got %q", w.Body.String())
+	if !strings.Contains(w.Body.String(), "Datastar Request") {
+		t.Errorf("expected Datastar response, got %q", w.Body.String())
 	}
 
 	// Test regular request
@@ -351,6 +351,44 @@ func TestHandler(t *testing.T) {
 
 	if w.Body.String() != "ok" {
 		t.Errorf("expected 'ok', got %q", w.Body.String())
+	}
+}
+
+func TestDSPost(t *testing.T) {
+	r := New()
+	var handlerCalled bool
+
+	r.DSPost("/sse-endpoint", func(ctx *Context) error {
+		handlerCalled = true
+		return nil
+	})
+
+	req := httptest.NewRequest("POST", "/sse-endpoint", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if !handlerCalled {
+		t.Error("expected DSPost handler to be called")
+	}
+}
+
+func TestDSGet(t *testing.T) {
+	r := New()
+	var handlerCalled bool
+
+	r.DSGet("/sse-endpoint", func(ctx *Context) error {
+		handlerCalled = true
+		return nil
+	})
+
+	req := httptest.NewRequest("GET", "/sse-endpoint", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	if !handlerCalled {
+		t.Error("expected DSGet handler to be called")
 	}
 }
 

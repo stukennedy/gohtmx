@@ -16,15 +16,14 @@ import (
 //go:embed templates/*
 var templateFS embed.FS
 
-// HTMX files to download during project creation
-var htmxFiles = map[string]string{
-	"static/js/htmx.min.js": "https://four.htmx.org/js/htmx.min.js",
-	"static/js/hx-ws.js":    "https://four.htmx.org/js/ext/hx-ws.js",
+// Datastar files to download during project creation
+var datastarFiles = map[string]string{
+	"static/js/datastar.js": "https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.0-RC.7/bundles/datastar.js",
 }
 
-// downloadHTMX downloads HTMX files to the project's static/js directory
-func downloadHTMX(projectDir string) error {
-	for destPath, url := range htmxFiles {
+// downloadDatastar downloads Datastar files to the project's static/js directory
+func downloadDatastar(projectDir string) error {
+	for destPath, url := range datastarFiles {
 		fullPath := filepath.Join(projectDir, destPath)
 
 		// Create directory if needed
@@ -297,10 +296,10 @@ func newProject(name string) error {
 		return fmt.Errorf("copying templates: %w", err)
 	}
 
-	// Download HTMX files
-	fmt.Println("Downloading HTMX...")
-	if err := downloadHTMX(projectDir); err != nil {
-		return fmt.Errorf("downloading HTMX: %w", err)
+	// Download Datastar files
+	fmt.Println("Downloading Datastar...")
+	if err := downloadDatastar(projectDir); err != nil {
+		return fmt.Errorf("downloading Datastar: %w", err)
 	}
 
 	// Make scripts executable

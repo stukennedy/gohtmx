@@ -1,4 +1,4 @@
-// Package router provides an HTMX-aware HTTP router built on chi.
+// Package router provides a Datastar-aware HTTP router built on chi.
 package router
 
 import (
@@ -9,8 +9,14 @@ import (
 )
 
 // FragmentHandler is a handler function that returns an HTML fragment.
+// Use this for initial page loads (non-SSE requests).
 // If an error is returned, an error response is automatically generated.
 type FragmentHandler func(ctx *Context) (string, error)
+
+// SSEHandler is a handler function for Datastar SSE requests.
+// Use ctx.SSE() to stream responses back to the client.
+// Handlers should use the SSE methods to patch elements and signals.
+type SSEHandler func(ctx *Context) error
 
 // Router wraps chi with hypermedia-specific conventions.
 type Router struct {
@@ -24,7 +30,7 @@ func New() *Router {
 	// Default middleware
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
-	r.Use(HXRequestMiddleware)
+	r.Use(DatastarRequestMiddleware)
 
 	return &Router{mux: r}
 }
@@ -44,7 +50,7 @@ func (r *Router) Use(middlewares ...func(http.Handler) http.Handler) {
 	r.mux.Use(middlewares...)
 }
 
-// Fragment registers a handler that returns HTML fragments.
+// Fragment registers a handler that returns HTML fragments (for initial page loads).
 func (r *Router) Fragment(method, pattern string, handler FragmentHandler) {
 	r.mux.Method(method, pattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ctx := NewContext(w, req)
@@ -55,6 +61,20 @@ func (r *Router) Fragment(method, pattern string, handler FragmentHandler) {
 		}
 		if !ctx.Written() {
 			ctx.HTML(html)
+		}
+	}))
+}
+
+// SSE registers a handler for Datastar SSE requests.
+func (r *Router) SSE(method, pattern string, handler SSEHandler) {
+	r.mux.Method(method, pattern, http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		ctx := NewContext(w, req)
+		if err := handler(ctx); err != nil {
+			// If not yet streaming, we can send an error response
+			if !ctx.Written() {
+				ctx.Error(err)
+			}
+			// If already streaming, error was already logged via SSE.ConsoleError
 		}
 	}))
 }
@@ -82,6 +102,35 @@ func (r *Router) PATCH(pattern string, handler FragmentHandler) {
 // DELETE registers a DELETE handler that returns HTML fragments.
 func (r *Router) DELETE(pattern string, handler FragmentHandler) {
 	r.Fragment(http.MethodDelete, pattern, handler)
+}
+
+// --- Datastar SSE Handlers ---
+// These methods register handlers for Datastar SSE requests.
+// Use ctx.SSE() methods to stream DOM patches and signal updates.
+
+// DSGet registers a GET handler for Datastar SSE requests.
+func (r *Router) DSGet(pattern string, handler SSEHandler) {
+	r.SSE(http.MethodGet, pattern, handler)
+}
+
+// DSPost registers a POST handler for Datastar SSE requests.
+func (r *Router) DSPost(pattern string, handler SSEHandler) {
+	r.SSE(http.MethodPost, pattern, handler)
+}
+
+// DSPut registers a PUT handler for Datastar SSE requests.
+func (r *Router) DSPut(pattern string, handler SSEHandler) {
+	r.SSE(http.MethodPut, pattern, handler)
+}
+
+// DSPatch registers a PATCH handler for Datastar SSE requests.
+func (r *Router) DSPatch(pattern string, handler SSEHandler) {
+	r.SSE(http.MethodPatch, pattern, handler)
+}
+
+// DSDelete registers a DELETE handler for Datastar SSE requests.
+func (r *Router) DSDelete(pattern string, handler SSEHandler) {
+	r.SSE(http.MethodDelete, pattern, handler)
 }
 
 // Handle registers a standard http.Handler.

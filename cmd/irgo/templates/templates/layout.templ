@@ -13,8 +13,7 @@ templ Layout(title string) {
 			<meta name="apple-mobile-web-app-capable" content="yes"/>
 			<title>{ title }</title>
 			<link rel="stylesheet" href="/static/css/output.css"/>
-			<script src="/static/js/htmx.min.js"></script>
-			<script src="/static/js/hx-ws.js"></script>
+			<script type="module" src="/static/js/datastar.js"></script>
 		</head>
 		<body class="bg-gray-100 min-h-screen">
 			{ children... }
@@ -71,4 +70,26 @@ templ Page(title string) {
 			{ children... }
 		</div>
 	}
+}
+
+// FullscreenPage provides a layout for immersive full-screen experiences
+templ FullscreenPage(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover"/>
+			<meta name="mobile-web-app-capable" content="yes"/>
+			<meta name="apple-mobile-web-app-capable" content="yes"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="/static/css/output.css"/>
+			<script type="module" src="/static/js/datastar.js"></script>
+		</head>
+		<body>
+			{ children... }
+			if DevMode {
+				@livereloadScript()
+			}
+		</body>
+	</html>
 }

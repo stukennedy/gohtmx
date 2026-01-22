@@ -12,30 +12,24 @@ templ HomePage(todos []*Todo) {
 	@Page("Todo App") {
 		<h1 class="text-3xl font-bold mb-6 text-gray-800">Todo App</h1>
 
-		<!-- Add todo form -->
-		<form
-			hx-post="/todos"
-			hx-target="#todo-list"
-			hx-swap="afterbegin"
-			hx-on::after-request="this.reset()"
-			class="mb-6"
-		>
+		<!-- Add todo form with signals -->
+		<div data-signals="{title: ''}" class="mb-6">
 			<div class="flex gap-2">
 				<input
 					type="text"
-					name="title"
+					data-bind:title
 					placeholder="What needs to be done?"
-					required
+					data-on:keydown="event.key === 'Enter' && $title.trim() && @post('/todos')"
 					class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
 				/>
 				<button
-					type="submit"
+					data-on:click="$title.trim() && @post('/todos')"
 					class="px-6 py-3 bg-blue-500 text-white font-medium rounded-lg hover:bg-blue-600 transition-colors"
 				>
 					Add
 				</button>
 			</div>
-		</form>
+		</div>
 
 		<!-- Todo list -->
 		<ul id="todo-list" class="space-y-2">
@@ -62,9 +56,7 @@ templ TodoItem(todo *Todo) {
 			if todo.Completed {
 				checked
 			}
-			hx-post={ fmt.Sprintf("/todos/%d/toggle", todo.ID) }
-			hx-target={ fmt.Sprintf("#todo-%d", todo.ID) }
-			hx-swap="outerHTML"
+			data-on:click={ fmt.Sprintf("@post('/todos/%d/toggle')", todo.ID) }
 			class="w-5 h-5 rounded border-gray-300 text-blue-500 focus:ring-blue-500 cursor-pointer"
 		/>
 		<span
@@ -76,10 +68,7 @@ templ TodoItem(todo *Todo) {
 			{ todo.Title }
 		</span>
 		<button
-			hx-delete={ fmt.Sprintf("/todos/%d", todo.ID) }
-			hx-target={ fmt.Sprintf("#todo-%d", todo.ID) }
-			hx-swap="outerHTML swap:200ms"
-			hx-confirm="Delete this todo?"
+			data-on:click={ fmt.Sprintf("@delete('/todos/%d')", todo.ID) }
 			class="px-3 py-1 text-sm text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
 		>
 			Delete
@@ -94,13 +83,13 @@ templ TodoList(todos []*Todo) {
 }
 
 templ ErrorMessage(message string) {
-	<div class="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg" role="alert">
+	<div id="error-message" class="p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg" role="alert">
 		{ message }
 	</div>
 }
 
 templ SuccessMessage(message string) {
-	<div class="p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg" role="alert">
+	<div id="success-message" class="p-4 bg-green-50 border border-green-200 text-green-700 rounded-lg" role="alert">
 		{ message }
 	</div>
 }

@@ -1,21 +1,87 @@
 package handlers
 
 import (
+	"sync/atomic"
+	"time"
+
 	"{{MODULE_PATH}}/templates"
-	"github.com/stukennedy/irgo/pkg/render"
 	"github.com/stukennedy/irgo/pkg/router"
 )
 
+// Global state for the demo
+var pulseCount atomic.Int64
+
 // Mount registers all handlers on the router
-func Mount(r *router.Router, renderer *render.TemplRenderer) {
-	// Example: greeting endpoint
-	r.GET("/greeting", func(ctx *router.Context) (string, error) {
-		name := ctx.Query("name")
-		if name == "" {
-			name = "World"
-		}
-		return renderer.Render(templates.Greeting(name))
+func Mount(r *router.Router) {
+	// Initialize connection
+	r.DSGet("/api/init", func(ctx *router.Context) error {
+		sse := ctx.SSE()
+		// Send connection status (server-controlled)
+		sse.PatchTempl(templates.ConnectionStatus(true))
+		return sse.PatchTempl(templates.PulseStats(0, 0))
 	})
 
-	// Add more handlers here...
+	// Handle mouse/touch movement - the core interactive endpoint
+	r.DSGet("/api/pulse", func(ctx *router.Context) error {
+		start := time.Now()
+
+		// Read mouse position from signals
+		var signals struct {
+			MouseX float64 `json:"mouseX"`
+			MouseY float64 `json:"mouseY"`
+		}
+		if err := ctx.ReadSignals(&signals); err != nil {
+			signals.MouseX = 0.5
+			signals.MouseY = 0.5
+		}
+
+		// Increment pulse counter
+		count := int(pulseCount.Add(1))
+
+		// Calculate intensity based on distance from center
+		dx := signals.MouseX - 0.5
+		dy := signals.MouseY - 0.5
+		intensity := int((dx*dx + dy*dy) * 400)
+		if intensity > 100 {
+			intensity = 100
+		}
+
+		// Calculate latency
+		latency := int(time.Since(start).Milliseconds())
+
+		sse := ctx.SSE()
+
+		// Update the orb SVG (morphs based on position)
+		sse.PatchTempl(templates.OrbSVG(signals.MouseX, signals.MouseY, intensity))
+
+		// Update particles
+		sse.PatchTempl(templates.ParticlesSVG(signals.MouseX, signals.MouseY))
+
+		// Update connection lines
+		sse.PatchTempl(templates.ConnectionPaths(signals.MouseX, signals.MouseY))
+
+		// Update stats
+		sse.PatchTempl(templates.PulseStats(count, latency))
+
+		return nil
+	})
+
+	// Burst effect - triggered by button
+	r.DSGet("/api/burst", func(ctx *router.Context) error {
+		sse := ctx.SSE()
+
+		// Create a burst animation by rapidly updating with high intensity
+		for i := 0; i < 5; i++ {
+			intensity := 100 - i*20
+			sse.PatchTempl(templates.OrbSVG(0.5, 0.5, intensity))
+			time.Sleep(50 * time.Millisecond)
+		}
+
+		// Reset to normal
+		count := int(pulseCount.Add(1))
+		sse.PatchTempl(templates.OrbSVG(0.5, 0.5, 0))
+		sse.PatchTempl(templates.PulseStats(count, 0))
+
+		return nil
+	})
 }

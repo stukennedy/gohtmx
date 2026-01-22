@@ -95,71 +95,32 @@ func TestContextFormValue(t *testing.T) {
 	}
 }
 
-func TestContextIsHTMX(t *testing.T) {
+func TestContextIsDatastar(t *testing.T) {
 	r := New()
-	var isHTMX bool
+	var isDatastar bool
 
 	r.GET("/test", func(ctx *Context) (string, error) {
-		isHTMX = ctx.IsHTMX()
+		isDatastar = ctx.IsDatastar()
 		return "", nil
 	})
 
-	// Test non-HTMX request
+	// Test non-Datastar request
 	req := httptest.NewRequest("GET", "/test", nil)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if isHTMX {
-		t.Error("expected IsHTMX()=false for regular request")
+	if isDatastar {
+		t.Error("expected IsDatastar()=false for regular request")
 	}
 
-	// Test HTMX request
+	// Test Datastar SSE request
 	req = httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("HX-Request", "true")
+	req.Header.Set("Accept", "text/event-stream")
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	if !isHTMX {
-		t.Error("expected IsHTMX()=true for HTMX request")
-	}
-}
-
-func TestContextHTMXHeaders(t *testing.T) {
-	r := New()
-	var target, trigger, triggerName, currentURL, prompt string
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		target = ctx.HXTarget()
-		trigger = ctx.HXTrigger()
-		triggerName = ctx.HXTriggerName()
-		currentURL = ctx.HXCurrentURL()
-		prompt = ctx.HXPrompt()
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("HX-Target", "#content")
-	req.Header.Set("HX-Trigger", "btn-1")
-	req.Header.Set("HX-Trigger-Name", "submit")
-	req.Header.Set("HX-Current-URL", "http://example.com/page")
-	req.Header.Set("HX-Prompt", "user input")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if target != "#content" {
-		t.Errorf("expected HXTarget='#content', got %q", target)
-	}
-	if trigger != "btn-1" {
-		t.Errorf("expected HXTrigger='btn-1', got %q", trigger)
-	}
-	if triggerName != "submit" {
-		t.Errorf("expected HXTriggerName='submit', got %q", triggerName)
-	}
-	if currentURL != "http://example.com/page" {
-		t.Errorf("expected HXCurrentURL='http://example.com/page', got %q", currentURL)
-	}
-	if prompt != "user input" {
-		t.Errorf("expected HXPrompt='user input', got %q", prompt)
+	if !isDatastar {
+		t.Error("expected IsDatastar()=true for Datastar SSE request")
 	}
 }
 
@@ -316,40 +277,6 @@ func TestContextBadRequest(t *testing.T) {
 	}
 }
 
-func TestContextTrigger(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.Trigger("itemCreated")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Trigger") != "itemCreated" {
-		t.Errorf("expected HX-Trigger='itemCreated', got %q", w.Header().Get("HX-Trigger"))
-	}
-}
-
-func TestContextTriggerAfterSettle(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.TriggerAfterSettle("animationComplete")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Trigger-After-Settle") != "animationComplete" {
-		t.Errorf("expected HX-Trigger-After-Settle='animationComplete', got %q", w.Header().Get("HX-Trigger-After-Settle"))
-	}
-}
-
 func TestContextRedirect(t *testing.T) {
 	r := New()
 
@@ -366,100 +293,8 @@ func TestContextRedirect(t *testing.T) {
 	if w.Code != http.StatusSeeOther {
 		t.Errorf("expected status 303, got %d", w.Code)
 	}
-
-	// Test HTMX redirect
-	req = httptest.NewRequest("GET", "/test", nil)
-	req.Header.Set("HX-Request", "true")
-	w = httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Redirect") != "/new-location" {
-		t.Errorf("expected HX-Redirect='/new-location', got %q", w.Header().Get("HX-Redirect"))
-	}
-}
-
-func TestContextPushURL(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.PushURL("/new-url")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Push-Url") != "/new-url" {
-		t.Errorf("expected HX-Push-Url='/new-url', got %q", w.Header().Get("HX-Push-Url"))
-	}
-}
-
-func TestContextReplaceURL(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.ReplaceURL("/replaced-url")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Replace-Url") != "/replaced-url" {
-		t.Errorf("expected HX-Replace-Url='/replaced-url', got %q", w.Header().Get("HX-Replace-Url"))
-	}
-}
-
-func TestContextRetarget(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.Retarget("#new-target")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Retarget") != "#new-target" {
-		t.Errorf("expected HX-Retarget='#new-target', got %q", w.Header().Get("HX-Retarget"))
-	}
-}
-
-func TestContextReswap(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.Reswap("outerHTML")
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Reswap") != "outerHTML" {
-		t.Errorf("expected HX-Reswap='outerHTML', got %q", w.Header().Get("HX-Reswap"))
-	}
-}
-
-func TestContextRefresh(t *testing.T) {
-	r := New()
-
-	r.GET("/test", func(ctx *Context) (string, error) {
-		ctx.Refresh()
-		return "", nil
-	})
-
-	req := httptest.NewRequest("GET", "/test", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
-
-	if w.Header().Get("HX-Refresh") != "true" {
-		t.Errorf("expected HX-Refresh='true', got %q", w.Header().Get("HX-Refresh"))
+	if w.Header().Get("Location") != "/new-location" {
+		t.Errorf("expected Location='/new-location', got %q", w.Header().Get("Location"))
 	}
 }
 
@@ -523,5 +358,24 @@ func TestContextWritten(t *testing.T) {
 
 	if !ctx.Written() {
 		t.Error("expected Written()=true after writing")
+	}
+}
+
+func TestContextSSE(t *testing.T) {
+	r := New()
+	var sseNotNil bool
+
+	r.GET("/test", func(ctx *Context) (string, error) {
+		sse := ctx.SSE()
+		sseNotNil = sse != nil
+		return "", nil
+	})
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if !sseNotNil {
+		t.Error("expected SSE() to return non-nil")
 	}
 }

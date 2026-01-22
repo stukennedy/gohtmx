@@ -1,19 +1,474 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @import "tailwindcss";
 
-/* HTMX loading indicators */
-.htmx-indicator {
-    opacity: 0;
-    transition: opacity 200ms ease-in;
-}
-.htmx-request .htmx-indicator {
-    opacity: 1;
-}
-.htmx-request.htmx-indicator {
-    opacity: 1;
+/* ============================================
+   CONSTELLATION DEMO - Cosmic Theme
+   ============================================ */
+
+:root {
+  --color-void: #0a0a0f;
+  --color-deep: #12121a;
+  --color-surface: #1a1a24;
+  --color-cyan: #00d4ff;
+  --color-magenta: #ff00aa;
+  --color-violet: #8b5cf6;
+  --color-aurora-1: #00ffaa;
+  --color-aurora-2: #00aaff;
+  --color-aurora-3: #aa00ff;
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-/* Smooth swap transitions */
-.htmx-swapping {
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: var(--color-void);
+  color: #e0e0e0;
+  font-family: var(--font-display);
+}
+
+/* ============================================
+   MAIN CONTAINER
+   ============================================ */
+
+.constellation-container {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ============================================
+   BACKGROUND LAYERS
+   ============================================ */
+
+.bg-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.bg-gradient {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% 50%, rgba(139, 92, 246, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse 60% 80% at 20% 80%, rgba(0, 212, 255, 0.1) 0%, transparent 40%),
+    radial-gradient(ellipse 60% 80% at 80% 20%, rgba(255, 0, 170, 0.08) 0%, transparent 40%),
+    linear-gradient(180deg, var(--color-void) 0%, var(--color-deep) 100%);
+}
+
+.bg-noise {
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+}
+
+.bg-glow {
+  background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.05) 0%, transparent 50%);
+  animation: breathe 8s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ============================================
+   INTERACTION ZONE
+   ============================================ */
+
+.interaction-zone {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+/* ============================================
+   ORB STYLES
+   ============================================ */
+
+.orb-wrapper {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(60vw, 60vh);
+  height: min(60vw, 60vh);
+  pointer-events: none;
+}
+
+.orb-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.orb-core {
+  transition: d 0.15s ease-out, fill 0.3s ease;
+}
+
+.orb-highlight {
+  transition: cx 0.15s ease-out, cy 0.15s ease-out;
+}
+
+.ring {
+  transform-origin: center;
+}
+
+.ring-outer {
+  animation: pulse-ring 4s ease-in-out infinite;
+}
+
+.ring-mid {
+  animation: pulse-ring 4s ease-in-out infinite 1s;
+}
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 0.1; transform: scale(1); }
+  50% { opacity: 0.2; transform: scale(1.05); }
+}
+
+/* ============================================
+   PARTICLES
+   ============================================ */
+
+.particles-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.particles-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.particle {
+  transition: cx 0.2s ease-out, cy 0.2s ease-out;
+  animation: particle-float 3s ease-in-out infinite;
+}
+
+@keyframes particle-float {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
+}
+
+/* ============================================
+   CONNECTION LINES
+   ============================================ */
+
+.connections-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.connection-line {
+  transition: d 0.2s ease-out;
+  animation: line-pulse 2s ease-in-out infinite;
+}
+
+@keyframes line-pulse {
+  0%, 100% { stroke-opacity: 0.1; }
+  50% { stroke-opacity: 0.3; }
+}
+
+/* ============================================
+   UI OVERLAY
+   ============================================ */
+
+.ui-overlay {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  height: 100vh;
+  padding: 2rem;
+  pointer-events: none;
+}
+
+.ui-overlay > * {
+  pointer-events: auto;
+}
+
+/* ============================================
+   HERO HEADER
+   ============================================ */
+
+.hero-header {
+  text-align: center;
+  animation: fade-in-down 1s ease-out;
+}
+
+.title {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.title-gradient {
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-violet));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.title-divider {
+  color: rgba(255, 255, 255, 0.2);
+  font-weight: 300;
+}
+
+.title-accent {
+  background: linear-gradient(135deg, var(--color-magenta), var(--color-violet));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tagline {
+  font-size: clamp(0.9rem, 2vw, 1.1rem);
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+/* ============================================
+   GLASS PANELS
+   ============================================ */
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 1rem;
+  padding: 1rem 1.5rem;
+}
+
+/* ============================================
+   STATS PANEL
+   ============================================ */
+
+.stats-panel {
+  display: flex;
+  gap: 2rem;
+  animation: fade-in-up 1s ease-out 0.2s both;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.stat-value {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.stat-value.mono {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--color-cyan);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.status-dot.active {
+  background: var(--color-aurora-1);
+  box-shadow: 0 0 10px var(--color-aurora-1);
+}
+
+/* ============================================
+   INFO PANEL
+   ============================================ */
+
+.info-panel {
+  max-width: 400px;
+  text-align: center;
+  animation: fade-in-up 1s ease-out 0.4s both;
+}
+
+.info-text {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.info-text strong {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.tech-badges {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.35rem 0.75rem;
+  border-radius: 2rem;
+  background: rgba(139, 92, 246, 0.15);
+  color: var(--color-violet);
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+/* ============================================
+   ACTION BUTTONS
+   ============================================ */
+
+.action-buttons {
+  display: flex;
+  gap: 1rem;
+  animation: fade-in-up 1s ease-out 0.6s both;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: var(--font-display);
+  border-radius: 0.75rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+}
+
+.btn-icon {
+  width: 1rem;
+  height: 1rem;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-cyan), var(--color-violet));
+  color: white;
+  box-shadow: 0 4px 20px rgba(0, 212, 255, 0.3);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 30px rgba(0, 212, 255, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================
+   ANIMATIONS
+   ============================================ */
+
+@keyframes fade-in-down {
+  from {
     opacity: 0;
-    transition: opacity 100ms ease-out;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+
+@media (max-width: 640px) {
+  .ui-overlay {
+    padding: 1.5rem 1rem;
+  }
+
+  .stats-panel {
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+  }
+
+  .stat-label {
+    font-size: 0.6rem;
+  }
+
+  .info-panel {
+    padding: 0.75rem 1rem;
+  }
+
+  .action-buttons {
+    flex-direction: column;
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .btn {
+    justify-content: center;
+  }
+}
+
+/* ============================================
+   UTILITY CLASSES
+   ============================================ */
+
+.connected {
+  color: var(--color-aurora-1) !important;
 }

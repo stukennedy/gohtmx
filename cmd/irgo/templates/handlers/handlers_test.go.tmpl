@@ -1,4 +1,4 @@
-package handlers
+package handlers_test
 
 import (
 	"testing"
@@ -14,16 +14,17 @@ func TestHomePage(t *testing.T) {
 	resp := client.Get("/")
 	resp.AssertOK(t)
 	resp.AssertHTML(t)
-	resp.AssertContains(t, "{{PROJECT_NAME}}")
+	resp.AssertContains(t, "Irgo")
 }
 
-func TestHomePageHTMX(t *testing.T) {
+func TestHomePageDatastar(t *testing.T) {
 	r := app.NewRouter()
 	client := irgotest.NewClient(r.Handler())
 
-	// HTMX requests should also work
-	resp := client.HTMX().Get("/")
+	// Datastar SSE requests
+	resp := client.Datastar().Get("/api/init")
 	resp.AssertOK(t)
+	resp.AssertSSE(t)
 }
 
 // Example test for a form submission

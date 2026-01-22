@@ -88,40 +88,52 @@ func setupRouter() *router.Router {
 		return renderer.Render(templates.HomePage(todos))
 	})
 
-	// Get all todos (fragment)
-	r.GET("/todos", func(ctx *router.Context) (string, error) {
-		todos := store.All()
-		return renderer.Render(templates.TodoList(todos))
-	})
-
-	// Add new todo
-	r.POST("/todos", func(ctx *router.Context) (string, error) {
-		title := ctx.FormValue("title")
-		if title == "" {
-			return renderer.Render(templates.ErrorMessage("Title is required"))
+	// Add new todo (Datastar SSE)
+	r.DSPost("/todos", func(ctx *router.Context) error {
+		var signals struct {
+			Title string `json:"title"`
+		}
+		if err := ctx.ReadSignals(&signals); err != nil {
+			signals.Title = ctx.FormValue("title")
 		}
 
-		todo := store.Add(title)
-		return renderer.Render(templates.TodoItem(todo))
+		if signals.Title == "" {
+			return ctx.SSE().PatchTempl(templates.ErrorMessage("Title is required"))
+		}
+
+		todo := store.Add(signals.Title)
+		sse := ctx.SSE()
+
+		// Prepend new todo to list
+		sse.PatchTempl(templates.TodoItem(todo))
+
+		// Clear the input
+		sse.PatchSignals(map[string]any{"title": ""})
+
+		// Remove empty state if it exists
+		sse.Remove("#empty-state")
+
+		return nil
 	})
 
-	// Toggle todo completion
-	r.POST("/todos/{id}/toggle", func(ctx *router.Context) (string, error) {
+	// Toggle todo completion (Datastar SSE)
+	r.DSPost("/todos/{id}/toggle", func(ctx *router.Context) error {
 		id := parseID(ctx.Param("id"))
 		todo := store.Toggle(id)
 		if todo == nil {
 			ctx.NotFound("Todo not found")
-			return "", nil
+			return nil
 		}
-		return renderer.Render(templates.TodoItem(todo))
+		return ctx.SSE().PatchTempl(templates.TodoItem(todo))
 	})
 
-	// Delete todo
-	r.DELETE("/todos/{id}", func(ctx *router.Context) (string, error) {
+	// Delete todo (Datastar SSE)
+	r.DSDelete("/todos/{id}", func(ctx *router.Context) error {
 		id := parseID(ctx.Param("id"))
 		store.Delete(id)
-		// Return empty to remove the element
-		return "", nil
+
+		// Remove the element from DOM
+		return ctx.SSE().Remove(fmt.Sprintf("#todo-%d", id))
 	})
 
 	return r
@@ -129,7 +141,7 @@ func setupRouter() *router.Router {
 
 func addSampleData() {
 	store.Add("Learn irgo framework")
-	store.Add("Build a mobile app with HTMX")
+	store.Add("Build a mobile app with Datastar")
 	store.Add("Deploy to iOS and Android")
 }
 

@@ -1,11 +1,11 @@
 # Irgo
 
-A hypermedia-driven application framework that uses Go as a runtime kernel with HTMX. Build native iOS, Android, and **desktop** apps using Go, HTML, and HTMX - no JavaScript frameworks required.
+A hypermedia-driven application framework that uses Go as a runtime kernel with Datastar. Build native iOS, Android, and **desktop** apps using Go, HTML, and Datastar - no JavaScript frameworks required.
 
 ## Key Features
 
 - **Go-Powered Apps**: Write your backend logic in Go, compile to native mobile frameworks or desktop apps
-- **HTMX for Interactivity**: Use HTMX's hypermedia approach instead of complex JavaScript
+- **Datastar for Interactivity**: Use Datastar's hypermedia approach with SSE instead of complex JavaScript
 - **Cross-Platform**: Single codebase for iOS, Android, desktop (macOS, Windows, Linux), and web
 - **Virtual HTTP (Mobile)**: No network sockets - requests are intercepted and handled directly by Go
 - **Native Webview (Desktop)**: Real HTTP server with native webview window
@@ -20,9 +20,9 @@ A hypermedia-driven application framework that uses Go as a runtime kernel with 
 ┌─────────────────────────────────────────────────────────────┐
 │                      Mobile App                              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │                 WebView (HTMX)                         │  │
+│  │                 WebView (Datastar)                     │  │
 │  │  • HTML rendered by Go templates                       │  │
-│  │  • HTMX handles interactions via irgo:// scheme        │  │
+│  │  • Datastar handles interactions via irgo:// scheme    │  │
 │  └──────────────────────┬────────────────────────────────┘  │
 │                         │                                    │
 │  ┌──────────────────────▼────────────────────────────────┐  │
@@ -54,8 +54,7 @@ A hypermedia-driven application framework that uses Go as a runtime kernel with 
 │  ┌──────────────────────▼────────────────────────────────┐  │
 │  │         Go HTTP Server (localhost:PORT)                │  │
 │  │  • Page Routes (Templ → HTML)                          │  │
-│  │  • API Routes (JSON)                                   │  │
-│  │  • WebSocket/SSE Routes                                │  │
+│  │  • API Routes (SSE responses)                          │  │
 │  │  • Static Asset Server (/static/*)                     │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
@@ -147,7 +146,6 @@ myapp/
 ├── go.mod               # Go module definition
 ├── .air.toml            # Air hot reload configuration
 ├── package.json         # Node dependencies (Tailwind CSS)
-├── tailwind.config.js   # Tailwind configuration
 │
 ├── app/
 │   └── app.go           # Router setup and app configuration
@@ -157,7 +155,7 @@ myapp/
 │
 ├── templates/
 │   ├── layout.templ     # Base HTML layout
-│   ├── home.templ       # Home page template
+│   ├── pages.templ      # Page templates
 │   └── components.templ # Reusable components
 │
 ├── static/
@@ -165,7 +163,7 @@ myapp/
 │   │   ├── input.css    # Tailwind source
 │   │   └── output.css   # Generated CSS
 │   └── js/
-│       └── htmx.min.js  # HTMX library
+│       └── datastar.js  # Datastar library
 │
 ├── mobile/
 │   └── mobile.go        # Mobile bridge setup
@@ -283,55 +281,66 @@ irgo build desktop linux     # Creates build/desktop/linux/MyApp
 
 ## Writing Handlers
 
-Handlers process requests and return HTML fragments:
+Irgo supports two types of handlers:
+
+### Standard Handlers (Full Page Loads)
+
+Return `(string, error)` with HTML:
 
 ```go
-// handlers/handlers.go
-package handlers
+r.GET("/about", func(ctx *router.Context) (string, error) {
+    return renderer.Render(templates.AboutPage())
+})
+```
 
-import (
-    "myapp/templates"
-    "github.com/stukennedy/irgo/pkg/render"
-    "github.com/stukennedy/irgo/pkg/router"
-)
+### Datastar SSE Handlers
 
-func Mount(r *router.Router, renderer *render.TemplRenderer) {
-    r.GET("/about", func(ctx *router.Context) (string, error) {
-        return renderer.Render(templates.AboutPage())
-    })
+Return `error` and use `ctx.SSE()` for responses:
 
-    r.GET("/users/{id}", func(ctx *router.Context) (string, error) {
-        userID := ctx.Param("id")
-        user, err := fetchUser(userID)
-        if err != nil {
-            return renderer.Render(templates.ErrorMessage("User not found"))
-        }
-        return renderer.Render(templates.UserProfile(user))
-    })
+```go
+r.DSPost("/todos", func(ctx *router.Context) error {
+    var signals struct {
+        Title string `json:"title"`
+    }
+    ctx.ReadSignals(&signals)
 
-    r.POST("/todos", func(ctx *router.Context) (string, error) {
-        title := ctx.FormValue("title")
-        todo := createTodo(title)
-        return renderer.Render(templates.TodoItem(todo))
-    })
-}
+    todo := createTodo(signals.Title)
+
+    sse := ctx.SSE()
+    sse.PatchTempl(templates.TodoItem(todo))
+    sse.PatchSignals(map[string]any{"title": ""}) // Clear input
+    return nil
+})
 ```
 
 ## Writing Templates
 
-Templates use [templ](https://templ.guide):
+Templates use [templ](https://templ.guide) with Datastar attributes:
 
 ```go
-// templates/home.templ
+// templates/pages.templ
 package templates
 
 templ HomePage() {
     @Layout("Home") {
         <main class="container mx-auto p-4">
             <h1 class="text-2xl font-bold">Welcome to Irgo</h1>
-            <nav hx-boost="true">
-                <a href="/about" class="text-blue-500">About</a>
-            </nav>
+
+            <div data-signals="{name: ''}">
+                <input
+                    type="text"
+                    data-bind:name
+                    placeholder="Your name"
+                    class="border p-2 rounded"
+                />
+                <button
+                    data-on:click="@post('/greeting')"
+                    class="bg-blue-500 text-white px-4 py-2 rounded"
+                >
+                    Greet
+                </button>
+                <div id="greeting"></div>
+            </div>
         </main>
     }
 }
@@ -341,15 +350,11 @@ templ TodoItem(todo Todo) {
         <input
             type="checkbox"
             checked?={ todo.Done }
-            hx-post={ "/todos/" + todo.ID + "/toggle" }
-            hx-target={ "#todo-" + todo.ID }
-            hx-swap="outerHTML"
+            data-on:click={ fmt.Sprintf("@patch('/todos/%s')", todo.ID) }
         />
         <span>{ todo.Title }</span>
         <button
-            hx-delete={ "/todos/" + todo.ID }
-            hx-target={ "#todo-" + todo.ID }
-            hx-swap="delete"
+            data-on:click={ fmt.Sprintf("@delete('/todos/%s')", todo.ID) }
             class="text-red-500"
         >Delete</button>
     </div>
@@ -387,19 +392,23 @@ irgo version            # Print version
 irgo help [command]     # Show help
 ```
 
-## WebSocket Support
+## Datastar Overview
 
-Irgo supports real-time updates via WebSockets using HTMX 4's `hx-ws` extension:
+[Datastar](https://data-star.dev) is a lightweight (~11KB) hypermedia framework that powers Irgo's interactivity:
 
-```go
-templ LiveDashboard() {
-    <div hx-ws:connect="/ws/updates">
-        <div id="live-data">Waiting for updates...</div>
-    </div>
-}
-```
+- **SSE (Server-Sent Events)**: Server pushes HTML fragments to update the DOM
+- **Reactive Signals**: Client-side state with `data-signals` and `$variable` syntax
+- **Declarative Actions**: `data-on:click="@get('/api')"` triggers server requests
 
-See the full WebSocket documentation in [WEBSOCKETS.md](WEBSOCKETS.md).
+### Key Datastar Attributes
+
+| Attribute | Description | Example |
+|-----------|-------------|---------|
+| `data-signals` | Initialize state | `data-signals="{count: 0}"` |
+| `data-bind:X` | Two-way binding | `data-bind:name` |
+| `data-on:event` | Event handler | `data-on:click="@post('/api')"` |
+| `data-text` | Dynamic text | `data-text="$count"` |
+| `data-show` | Conditional display | `data-show="$visible"` |
 
 ## Troubleshooting
 
@@ -442,7 +451,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-- [HTMX](https://htmx.org) - The hypermedia approach that makes this possible
+- [Datastar](https://data-star.dev) - The hypermedia framework that powers Irgo
 - [templ](https://templ.guide) - Type-safe HTML templating for Go
 - [chi](https://github.com/go-chi/chi) - Lightweight Go router
 - [webview](https://github.com/webview/webview) - Native webview for desktop

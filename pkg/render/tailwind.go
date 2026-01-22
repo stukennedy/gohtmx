@@ -9,26 +9,21 @@ module.exports = {
   ],
   theme: {
     extend: {
-      // HTMX-specific animations
+      // Datastar and general animations
       animation: {
-        'htmx-added': 'htmx-added 0.5s ease-out',
-        'htmx-settling': 'htmx-settling 0.5s ease-out',
-        'htmx-swapping': 'htmx-swapping 0.5s ease-out',
+        'morph-in': 'morphIn 0.3s ease-out',
+        'morph-out': 'morphOut 0.3s ease-out',
         'fade-in': 'fadeIn 0.3s ease-out',
         'fade-out': 'fadeOut 0.3s ease-out',
         'slide-in': 'slideIn 0.3s ease-out',
         'slide-out': 'slideOut 0.3s ease-out',
       },
       keyframes: {
-        'htmx-added': {
+        'morphIn': {
           '0%': { opacity: '0', transform: 'translateY(-10px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
-        'htmx-settling': {
-          '0%': { opacity: '0.5' },
-          '100%': { opacity: '1' },
-        },
-        'htmx-swapping': {
+        'morphOut': {
           '0%': { opacity: '1' },
           '100%': { opacity: '0' },
         },
@@ -55,62 +50,43 @@ module.exports = {
 }
 `
 
-// TailwindCSS provides base CSS including HTMX integration styles.
+// TailwindCSS provides base CSS including Datastar integration styles.
 const TailwindCSS = `@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* HTMX indicator styles */
-.htmx-indicator {
-  opacity: 0;
+/* Datastar loading indicator styles */
+/* These work with data-indicator:loading attribute */
+[data-indicator] {
   transition: opacity 200ms ease-in;
 }
 
-.htmx-request .htmx-indicator {
-  opacity: 1;
-}
-
-.htmx-request.htmx-indicator {
-  opacity: 1;
-}
-
-/* HTMX request state styling */
-.htmx-request {
+/* General loading state styling */
+.loading {
   cursor: wait;
 }
 
-.htmx-request button,
-.htmx-request input[type="submit"] {
+.loading button,
+.loading input[type="submit"] {
   pointer-events: none;
   opacity: 0.7;
 }
 
-/* HTMX added element animation */
-.htmx-added {
-  animation: htmx-added 0.5s ease-out;
+/* Morph animation for patched elements */
+.morph-in {
+  animation: morphIn 0.3s ease-out;
 }
 
-/* HTMX settling animation */
-.htmx-settling {
-  animation: htmx-settling 0.5s ease-out;
+.morph-out {
+  animation: morphOut 0.3s ease-out;
 }
 
-/* HTMX swapping animation */
-.htmx-swapping {
-  animation: htmx-swapping 0.5s ease-out;
-}
-
-@keyframes htmx-added {
+@keyframes morphIn {
   0% { opacity: 0; transform: translateY(-10px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes htmx-settling {
-  0% { opacity: 0.5; }
-  100% { opacity: 1; }
-}
-
-@keyframes htmx-swapping {
+@keyframes morphOut {
   0% { opacity: 1; }
   100% { opacity: 0; }
 }
@@ -167,11 +143,11 @@ const PackageJSON = `{
 }
 `
 
-// HTMX4Script returns the script tag for HTMX 4.
+// DatastarScript returns the script tag for Datastar.
 // For mobile apps, this would be bundled locally.
-const HTMX4Script = `<script src="https://four.htmx.org/js/htmx.min.js"></script>`
+const DatastarScript = `<script type="module" src="https://cdn.jsdelivr.net/gh/starfederation/datastar/bundles/datastar.js"></script>`
 
-// BaseHTML provides a minimal HTML template with HTMX 4 and Tailwind.
+// BaseHTML provides a minimal HTML template with Datastar and Tailwind.
 const BaseHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -182,10 +158,9 @@ const BaseHTML = `<!DOCTYPE html>
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>{{.Title}}</title>
     <link rel="stylesheet" href="/assets/css/output.css">
-    <script src="/assets/js/htmx.min.js"></script>
-    <script src="/assets/js/irgo-bridge.js"></script>
+    <script type="module" src="/assets/js/datastar.js"></script>
 </head>
-<body class="bg-gray-50 text-gray-900 safe-area" hx-ext="irgo-bridge">
+<body class="bg-gray-50 text-gray-900 safe-area">
     <div id="app">
         {{.Content}}
     </div>

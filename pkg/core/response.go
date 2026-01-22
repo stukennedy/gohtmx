@@ -7,7 +7,7 @@ import (
 )
 
 // Response represents the hypermedia response back to the WebView.
-// Body contains HTML fragments for HTMX to swap.
+// Body contains HTML fragments or SSE events for Datastar to process.
 type Response struct {
 	Status  int    // HTTP status code (200, 404, 500, etc.)
 	Headers string // JSON-encoded response headers
@@ -115,11 +115,13 @@ func ErrorResponse(status int, message string) *Response {
 }
 
 // RedirectResponse creates a redirect response.
-// For HTMX requests, sets HX-Redirect header. Otherwise, sets Location header.
-func RedirectResponse(url string, isHTMX bool) *Response {
+// For Datastar requests, returns an SSE redirect event. Otherwise, sets Location header.
+func RedirectResponse(url string, isDatastar bool) *Response {
 	r := NewResponse(200)
-	if isHTMX {
-		r.SetHeader("HX-Redirect", url)
+	if isDatastar {
+		// For Datastar, redirect is an SSE event
+		r.SetHeader("Content-Type", "text/event-stream")
+		r.Body = []byte(fmt.Sprintf("event: datastar-browser-redirect\ndata: url %s\n\n", url))
 	} else {
 		r.Status = 302
 		r.SetHeader("Location", url)
@@ -127,25 +129,27 @@ func RedirectResponse(url string, isHTMX bool) *Response {
 	return r
 }
 
-// TriggerResponse creates a response that triggers an HTMX event.
-func TriggerResponse(status int, html string, event string) *Response {
-	r := HTMLResponse(status, html)
-	r.SetHeader("HX-Trigger", event)
+// SSEResponse creates an SSE response with the given event type and data.
+func SSEResponse(eventType string, data string) *Response {
+	r := NewResponse(200)
+	r.SetHeader("Content-Type", "text/event-stream")
+	r.Body = []byte(fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data))
 	return r
 }
 
-// RetargetResponse creates a response that changes the target element.
-func RetargetResponse(status int, html string, target string) *Response {
-	r := HTMLResponse(status, html)
-	r.SetHeader("HX-Retarget", target)
-	return r
+// SSEPatchResponse creates an SSE response that patches HTML fragments.
+func SSEPatchResponse(html string) *Response {
+	return SSEResponse("datastar-patch-elements", "fragments "+html)
 }
 
-// ReswapResponse creates a response that changes the swap strategy.
-func ReswapResponse(status int, html string, swap string) *Response {
-	r := HTMLResponse(status, html)
-	r.SetHeader("HX-Reswap", swap)
-	return r
+// SSESignalsResponse creates an SSE response that updates client signals.
+func SSESignalsResponse(signalsJSON string) *Response {
+	return SSEResponse("datastar-patch-signals", "signals "+signalsJSON)
+}
+
+// SSERemoveResponse creates an SSE response that removes elements.
+func SSERemoveResponse(selector string) *Response {
+	return SSEResponse("datastar-remove-elements", "selector "+selector)
 }
 
 // NoContentResponse creates a 204 No Content response.

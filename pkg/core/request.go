@@ -100,9 +100,9 @@ func (r *Request) QueryValue(key string) string {
 	return values.Get(key)
 }
 
-// IsHTMX returns true if this is an HTMX request (HX-Request header is "true").
-func (r *Request) IsHTMX() bool {
-	return r.GetHeader("HX-Request") == "true"
+// IsDatastar returns true if this is a Datastar SSE request (Accept header is "text/event-stream").
+func (r *Request) IsDatastar() bool {
+	return r.GetHeader("Accept") == "text/event-stream"
 }
 
 // ContentType returns the Content-Type header value.
